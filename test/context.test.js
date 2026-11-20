@@ -198,3 +198,19 @@ test('context: single named file stays small despite fuzzy matches', () => {
   assert.strictEqual(c.route, 'small');
   assert.strictEqual(c.confidence, 'high');
 });
+
+test('repoKey uses the origin name for clones, else the directory', () => {
+  const { repoKey } = require('../lib/context');
+  const { execFileSync } = require('node:child_process');
+  const g = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'ignore' });
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-'));
+  const src = path.join(base, 'myapp');
+  fs.mkdirSync(src);
+  g(src, 'init', '-q');
+  assert.strictEqual(repoKey(src), 'myapp');
+  const work = path.join(base, 'work');
+  g(base, 'clone', '-q', src, work);
+  assert.strictEqual(repoKey(work), 'myapp');
+  g(work, 'remote', 'set-url', 'origin', 'git@github.com:me/other-repo.git');
+  assert.strictEqual(repoKey(work), 'other-repo');
+});
