@@ -44,7 +44,7 @@
       "promptKinds": []
     },
     "check": {
-      "question": "Did I add any element or text the request did not ask for?"
+      "question": "Did I add any element or text the request did not name?"
     },
     "kind": "ui",
     "count": 9,
