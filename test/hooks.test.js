@@ -158,6 +158,19 @@ test('session-end appends corrective turns redacted and bumps matching rules', (
   assert.deepStrictEqual(rules.map((r) => r.count), [6, 5]);
 });
 
+test('session-end ignores a repeated session and keywords without word characters', () => {
+  const home = tmp('buc-home-');
+  seed(home, [rule('no-overlap', { keywords: ['overlap'] }), rule('symbols', { keywords: ['!!', '--'] })]);
+  const transcript = path.join(home, 't.jsonl');
+  fs.writeFileSync(path.join(home, 't.jsonl'), JSON.stringify({ type: 'user', sessionId: 's7', message: { content: 'no, the panels still overlap' } }));
+  for (let i = 0; i < 3; i++) hook('session-end.js', { transcript_path: transcript, cwd: '/x' }, home);
+  const inbox = fs.readFileSync(path.join(home, 'inbox.jsonl'), 'utf8').trim().split('\n');
+  assert.strictEqual(inbox.length, 1);
+  const rules = JSON.parse(fs.readFileSync(path.join(home, 'rules.json'), 'utf8'));
+  assert.deepStrictEqual(rules.map((r) => r.count), [6, 5]);
+  assert.deepStrictEqual(rules[0].bumped_sessions, ['s7']);
+});
+
 test('buc learn --dry-run skips subagent and temp dirs', () => {
   const root = tmp('buc-proj-');
   const line = (t) => JSON.stringify({ type: 'user', sessionId: 'sx', message: { content: t } });

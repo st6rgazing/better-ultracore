@@ -9,8 +9,13 @@ function run(input) {
   if (!turns.length) return 0;
   const ts = new Date().toISOString();
   store.appendInbox(turns.map((t) => ({ ts, session_id: t.session_id, text: t.text })));
-  const hit = store.loadRules().filter((r) => turns.some((t) => r.when.keywords.some((k) => new RegExp(`\\b${k.replace(/\W/g, '')}\\b`, 'i').test(t.text)))).map((r) => r.id);
-  if (hit.length) store.bump(hit);
+  const hits = {};
+  for (const r of store.loadRules()) {
+    const words = r.when.keywords.map((k) => k.replace(/\W/g, '')).filter(Boolean);
+    const sessions = turns.filter((t) => words.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(t.text))).map((t) => t.session_id);
+    if (sessions.length) hits[r.id] = sessions;
+  }
+  if (Object.keys(hits).length) store.bumpSessions(hits);
   return turns.length;
 }
 
