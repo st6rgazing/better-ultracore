@@ -1,0 +1,1 @@
+Todos need priorities. Let people set a priority (high, normal or low) when adding a todo from the CLI, show high-priority todos first in the list, and document the new option in a README. Keep the existing commands and tests working.
