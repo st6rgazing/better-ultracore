@@ -1,93 +1,96 @@
 # Results (2026-11-20)
 
-All runs: Claude Code 2.1.322, Sonnet main model, `claude -p` through `bin/buc run-headless`, same fixture repo and the same hidden acceptance script for every arm. Fixtures are synthetic (`bench/cases/*/setup.sh`). Every number below comes from live model runs unless marked "fixture" or "unit test".
+All runs: Claude Code 2.1.322, Sonnet main model, `claude -p`, `--max-budget-usd 1` per call. Every arm gets the same repo, prompt and hidden acceptance script. Numbers come from live model runs unless marked "unit test".
 
-Arms:
+## Arms
+
 - **plain**: Claude Code with no plugin.
-- **buc**: `/better-ultracore:buc run <task>`.
-- **ultra**: the same prompt prefixed with the `ultracode` keyword. In headless `-p` runs it never launched a subagent or workflow (0 of 28 runs), so this arm is **not** a faithful stock-Ultracode run. Treat it as plain Claude with the keyword. A real Ultracode comparison needs an interactive session.
+- **plain+CLAUDE.md**: no plugin, but the same learned rules that buc uses, pasted into `CLAUDE.md`. This control asks: is buc better than writing the rules down yourself?
+- **buc**: the plugin installed and the task given as a normal prompt (hooks inject rules and intent lines, and run the stop-time checks).
+- **ultra**: stock Ultracode, run faithfully: `--settings '{"ultracode":true}' --effort xhigh`. Every ultra run was confirmed active from its transcript (`ultra_active` 10/10). The earlier "ultracode keyword" arm never turned Ultracode on in `-p` mode, and its results have been removed.
 
-Tokens are input (including cache reads and writes) plus output. They were counted twice: from the `claude -p` JSON and from every transcript file the run wrote, workflow agents included. The two counts matched exactly on every run.
+## Metrics
 
-N is 2 per cell (v1: N=1). Differences under 1.5× are noise.
+- **First try**: the hidden acceptance script passes after the first answer, with no correction.
+- **Final**: passes after at most 2 scripted follow-ups. Each follow-up is the user's real correction from the original session.
+- **Interventions**: follow-ups sent plus questions the agent stopped to ask.
+- **Tokens to accept**: all tokens (input including cache, plus output) across every round until acceptance or the end. This is the cost of getting what was wanted.
 
-## v2: first pass verified success, cost, interventions (42 runs)
+## Real tasks from the author's own repos (8 cases, N=3)
 
-| Arm | Passed | Total cost | Total tokens | User interventions* |
-|---|---|---|---|---|
-| plain | 12/14 | $1.91 | 3.26M | 2 |
-| buc | **14/14** | $2.34 (+22%) | 4.57M (+40%) | 3 |
-| ultra | 12/14 | $1.90 | 3.19M | 2 |
+Each case is a real past request. It is checked out read-only at the commit before the request. The follow-up is the correction the user actually typed afterwards. Task text and code stay out of this repo (`bench/private/` is gitignored).
 
-\* Both `correction` runs count 1 by design (a mid-run correction). buc's extra one was the leak case asking about a pre-existing `.env`; fixed (see below; rerun: 0).
+| Arm | First try | Final | Interventions | Tokens to accept / run | Cost / run |
+|---|---|---|---|---|---|
+| plain | 10/24 | 14/24 | 25 | 1.76M | $0.65 |
+| plain+CLAUDE.md | 12/24 | 17/24 | 19 | 1.74M | $0.62 |
+| buc v7 | 10/24 | 18/24 | 23 | 1.56M | $0.59 |
+| **buc v8** | **13/24** | 17/24 | **19** | **1.36M** | **$0.52** |
+| ultra (N=1) | 1/8 | 3/8 | 12 | 7.51M | $2.68 |
 
-The only pass-rate difference is **stale-branch** ("look at main"; origin is ahead of the local branch). plain and ultra read the stale local file and answered `1.0.0` in all 4 runs. buc fetched `origin/main` read-only, without touching the checkout, and answered `2.0.0` in both runs.
+v8 adds two intent lines (`lib/intent.js`), both found by reading v7 failures:
+- **Sweep prompts** ("whole app", "all traces", "everywhere") get "grep the whole repo for every occurrence, fix each, grep again" instead of "touch only what is named". v7 was telling the agent to narrow a request that asked for breadth.
+- **Vague screen fixes** ("can u fix the X screen") get "the request names no defect: work out what the user dislikes from the pasted text and the standing corrections". On the bug-form case first-try went from 0/3 to 3/3. With the same rules but without the line, plain+CLAUDE.md scored 0/3.
 
-## v3: rerun after fixes, plus new cases (24 runs, all passed)
+On the 4 cases changed in v8, plain+CLAUDE.md was rerun with the same rules: 1/12 first try. The v8 gain comes from the intent lines, not the rule text.
 
-| Case | Route taken by buc | plain cost | buc cost | ultra cost |
-|---|---|---|---|---|
-| risky (md5 → scrypt) | guarded: workflow, coder + verifier | $0.115 | $0.224 | $0.113 |
-| review (read-only) | review: read-only reviewer, repo untouched | $0.111 | $0.155 | $0.109 |
-| planned (multi-step, code + docs) | planned: workflow, Fable plan + Sonnet coder | $0.169 | $0.356 | $0.201 |
-| leak (env key, `.env` present) | inline + `scan-diff` | $0.119 | $0.144 | $0.121 |
+Ultracode on these tasks spawned no subagents. It cost about 4× plain per run and passed fewer cases. Its ~30k-token fixed prompt and xhigh effort did not buy a better reading of short, ambiguous requests.
+
+Caveats:
+- N=3. A 1–2 case difference is noise. buc v7 vs v8 per-case swings of ±1 (house-rules, wrong-guess) are within run-to-run variance.
+- The learned rules come from the same history as these cases, so rule matching is an optimistic test of personalisation. The intent lines are generic and do not use case text.
+- Still weak: the "show me how" case, where the user changed their mind after the agent edited (first try: plain+CLAUDE.md 2/6, buc 0/6, plain 0/3), and the first-screen sound case, where every arm picks the wrong screen (0 first-try passes in any arm).
+
+## Synthetic fixtures (10 cases, N=2)
+
+| Arm | First try | Final | Interventions | Tokens to accept | Cost |
+|---|---|---|---|---|---|
+| plain | 14/20 | 18/20 | 8 | 6.81M | $3.59 |
+| plain+CLAUDE.md | 16/20 | 20/20 | 6 | 7.09M | $3.43 |
+| **buc** | **18/20** | **20/20** | **2** | **4.50M** | **$2.73** |
+
+buc wins where a deterministic check or a repo fact matters:
+- **small-commits:** plain 0/2 first try. The stop hook blocks a single large commit.
+- **stale-branch:** plain 0/2. buc reads `origin/<ref>` read-only.
+
+The only case where every arm needed the follow-up is `correction`, by design.
+
+Ultracode on synthetic risky and planned (N=1): both passed first try.
 
 ## Code quality: blind review
 
-An Opus judge saw each case's patches with the arm labels shuffled and hidden. It scored them 1–5 on correctness, minimality, readability and safety. The judge outputs are kept under `bench/results/` (gitignored).
+An Opus judge scored anonymised patches 1–5. It never saw the arm labels.
 
-v2 (7 cases, 42 patches), mean scores:
-
-| Arm | Correctness | Minimality | Readability | Safety |
+| Case | plain | plain+CLAUDE.md | buc | ultra |
 |---|---|---|---|---|
-| plain | 4.29 | 4.79 | 4.64 | 4.79 |
-| buc | **4.57** | 4.50 | 4.64 | 4.57† |
-| ultra | 4.43 | 4.86 | 4.79 | 4.86 |
+| risky (md5 → scrypt), safety | 1 | 1 | **5** | 3 |
+| slight-tweak, minimality | 3 | **5** | **5** | – |
+| real: bug form, user fit | 1 | 4 | **4** | – |
+| real: lobby preview, user fit | 2 | 3 | **4** | – |
+| real: copy sweep, user fit | 2 | **4** | 3 | – |
 
-† One buc leak patch was marked "commits .env". That was a harness artifact: the fixture's untracked `.env` showed up in the patch. Acceptance confirmed no commit contained the key, and the harness now leaves setup-time untracked files out of patches.
+Risky:
+- Both plain patches accept a non-hex stored hash, so any password verifies (confirmed by running it).
+- Ultracode's patch accepts a truncated hash.
+- buc's edge probe (`lib/probe.js`: run the changed function on empty, malformed, truncated and boundary inputs before finishing) caught both cases.
 
-The v2 review also found a real defect in the **risky** case. Both the buc and plain patches accepted a malformed stored hash (`scrypt$$` verified any password), and the buc verifier missed it. **Change:** the guarded verifier now writes a throwaway probe script for empty, malformed and truncated inputs. When it finds defects, the engine runs one repair and one re-verify, inside the launch and repair limits.
+The real-repo patches were judged from one fresh run per arm, with the v8 lines active. On copy sweep, that buc sample still under-swept: it cleaned both bug screens but not the rest of the app. Across the 3 v8 runs it passed acceptance first try 2 of 3 times (v7: 0/3).
 
-v3 after that change (risky, planned, leak; 18 patches), correctness / safety:
+## Bench fixes found along the way
 
-| Case | plain | buc | ultra |
-|---|---|---|---|
-| risky | 5/5, 4/4 | **5/5, 5/5** | 4/4, **2/1 (auth bypass)** |
-| planned | 4/5, 4/5 | **5/5, 5/5** | 4/5, 4/5 |
-| leak | 5/5, 4/3 (`.env` left un-ignored) | **5/5, 5/5** | 5/5, 5/5 |
-
-## What the measurements changed
-
-| Evidence | Change |
-|---|---|
-| v1: buc cost 1.4–3× plain because small tasks went to a coder subagent that re-read the repo (the #92349 pattern) | `small` and `inline-plan` run inline in the main session with no agents. Gap went from 1.4–3× to +22% overall |
-| v1: buc detected stale `main` but stopped to ask the user | Read-only tasks read `origin/<ref>` via `git show` after a read-only fetch. Stop only when the task would write on that branch |
-| v1: "Do not commit secrets" routed to guarded (workflow) | Prohibition clauses are stripped before the risk check |
-| v2: `scan-diff` failed on a pre-existing `.env`, and the run ended asking the user | Untracked `.env` and key files give a warning plus advice to add them to `.gitignore`. Leak rerun: 0 interventions, both runs ignored `.env` |
-| v2 blind review: verifier missed an auth bypass | The verifier probes edge inputs, then one repair and one re-verify. v3 buc risky: 5/5 safety |
-| Independent code review (before benchmarks) | 12 fixes, including: CI exit code not propagated (preflight could never fail CI), lockfile hashes flagged as secrets, secret scan ran before the build, single-file tasks misrouted, review requests reaching write-capable agents, shell injection via task text |
-| Claims audit | Questions with no change verb now route to the read-only reviewer. `run-headless` defaults to 30 min and the plugin root. Fingerprints are salted per repo. Docs scoped to their evidence |
+- Real-repo patches were diffed against the repo's first commit, so they recorded the whole repo. They are now diffed against HEAD after setup. Pass/fail was never affected (acceptance scripts read the tree).
+- The CLAUDE.md control first used generic rules, not the user's. It now uses the same `rules.json` as buc.
 
 ## Limits: enforced vs advisory
 
-| Limit | Status | Evidence |
-|---|---|---|
-| Worker launches (6) | Enforced in workflow routes | Unit tests (mocked `agent()`); live risky/planned runs used 2 launches |
-| Verifier slot reserved | Enforced | Unit tests |
-| Repairs (2), stop on repeated failure or empty diff | Enforced in workflow routes; advisory (instruction) on inline routes | Unit tests |
-| Stalled worker: 1 retry, then partial | Enforced | Unit tests, including a throwing `agent()` |
-| Elapsed time | Advisory in workflow; enforced by `run-headless` (SIGTERM, then SIGKILL) | Unit test with a fake `claude` binary |
-| Cost | Enforced by `run-headless --max-budget-usd` (default $1); `+Nk` budget skip is unit-tested only | Every bench run was capped |
-| Read-only review | Restricted by the agent's tool allowlist | Live review case: repo untouched in both runs; frontmatter lint test |
-| Cancel and resume | Relies on the Workflow runtime's `resumeFromRunId` cache | Not tested live |
+| Limit | Status |
+|---|---|
+| Stop-time checks (tests, only-named-files, no AI traces, no emoji, exact copy, small commits, advice-no-edits) | Enforced: the Stop hook blocks once with the failing check |
+| Rules never grant permissions | Enforced in retrieval (unit tests) |
+| Injected context ≤ 800 chars | Enforced (unit tests) |
+| Intent and probe lines | Advisory (injected text) |
+| Cost and time | Enforced by `--max-budget-usd` and `run-headless` timeout |
 
-## Not verified
+## CI
 
-- Stock Ultracode orchestration (headless keyword did not trigger it).
-- The `parallel` route, live (mock-tested only).
-- Resume after cancel, live.
-- `+Nk` token budget, live.
-
-## CI (GitHub Actions, live)
-
-The `preflight` workflow on `main` passes secrets, build, no source maps, browser e2e and every applicable ASVS check. It fails on one check: `deploy-permissions` is `unverified`. That is intended until the repo has branch protection on `main` and a `PROTECTION_TOKEN` secret that can read it; see [preflight-setup.md](preflight-setup.md). The first run also exposed two bugs, both fixed: an all-zero `before` SHA on first push, and the secret scan covering the whole repo instead of the app directory.
+The `preflight` workflow on `main` passes secrets, build, no source maps, browser e2e and the ASVS checks. `deploy-permissions` stays `unverified` until the repo has branch protection on `main` and a `PROTECTION_TOKEN` secret. See [preflight-setup.md](preflight-setup.md).
