@@ -63,14 +63,16 @@ test('inject stores the turn baseline only for rules with a check', () => {
   assert.deepStrictEqual(turn.rules, [{ id: 'advice-means-no-edits', cmd: 'advice-no-edits' }]);
 });
 
-test('inject adds the stale line only when origin/<ref> is ahead of the local branch', () => {
+test('inject: no remote → nothing; named ref → fetch-and-read hint; known ahead → stale line', () => {
   const dir = repo();
   const home = tmp('buc-home-');
   seed(home, []);
   const ask = () => hook('inject.js', { prompt: 'look at main please', cwd: dir, session_id: 's3' }, home);
   assert.strictEqual(ask(), null);
+  git(dir, 'remote', 'add', 'origin', dir);
+  assert.match(ask().hookSpecificOutput.additionalContext, /git fetch origin main.*git show origin\/main:<path>/);
   git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
-  assert.strictEqual(ask(), null);
+  assert.match(ask().hookSpecificOutput.additionalContext, /You named main/);
   fs.writeFileSync(path.join(dir, 'app.js'), 'b\n');
   git(dir, 'commit', '-qam', 'ahead');
   git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');

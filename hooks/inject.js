@@ -10,13 +10,16 @@ const store = require('../lib/rules/store');
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 const tryGit = (cwd, ...args) => { try { return git(cwd, ...args); } catch { return null; } };
 
-// Remote-tracking ref already ahead of the local branch (no fetch here).
+// A named branch with an origin remote: point at the remote truth. No network in the hook; the model fetches.
 function staleLine(root, prompt) {
   const ref = mentionedRef(root, prompt);
   if (!ref || tryGit(root, 'rev-parse', '--verify', '--quiet', `refs/heads/${ref}`) === null) return '';
-  const behind = tryGit(root, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${ref}`) !== null
-    && tryGit(root, 'merge-base', '--is-ancestor', `origin/${ref}`, ref) === null;
-  return behind ? `origin/${ref} is ahead of local ${ref}: read via git show origin/${ref}:<path> after git fetch` : '';
+  if (tryGit(root, 'remote', 'get-url', 'origin') === null) return '';
+  const known = tryGit(root, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${ref}`) !== null;
+  if (known && tryGit(root, 'merge-base', '--is-ancestor', `origin/${ref}`, ref) === null) {
+    return `origin/${ref} is ahead of local ${ref}: read via git show origin/${ref}:<path> after git fetch`;
+  }
+  return `You named ${ref}: run git fetch origin ${ref} (read-only for the checkout), then read files via git show origin/${ref}:<path> and cite the remote SHA. Do not use the local copy.`;
 }
 
 function run(input) {
