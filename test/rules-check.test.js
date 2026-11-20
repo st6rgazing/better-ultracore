@@ -180,3 +180,32 @@ test('small-commits needs one commit per item and a clean tree', () => {
   assert.strictEqual(run('small-commits', t).pass, true);
   assert.strictEqual(run('small-commits', turn(dir, 'just edit')).pass, true);
 });
+
+test('typecheckCmd reads package scripts or buc.json, and autoCheck false turns it off', () => {
+  const { typecheckCmd } = require('../lib/rules/check');
+  const dir = repo();
+  assert.strictEqual(typecheckCmd(dir), '');
+  write(dir, 'package.json', JSON.stringify({ scripts: { 'type-check': 'tsc' } }));
+  assert.strictEqual(typecheckCmd(dir), 'npm run -s type-check');
+  fs.mkdirSync(path.join(dir, '.claude'));
+  write(dir, '.claude/buc.json', JSON.stringify({ typecheckCmd: 'node tc.js' }));
+  assert.strictEqual(typecheckCmd(dir), 'node tc.js');
+  write(dir, '.claude/buc.json', JSON.stringify({ autoCheck: false }));
+  assert.strictEqual(typecheckCmd(dir), '');
+});
+
+test('typecheck blocks with output after a change, skips when idle, missing deps or timed out', () => {
+  const dir = repo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  write(dir, '.claude/buc.json', JSON.stringify({ typecheckCmd: 'node tc.js' }));
+  write(dir, 'tc.js', 'console.log("app.ts(1,1): error TS2304"); process.exit(2)\n');
+  const t = turn(dir, 'edit app');
+  assert.strictEqual(run('typecheck', t).pass, true);
+  write(dir, 'app.js', 'changed\n');
+  const r = run('typecheck', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /TS2304/);
+  assert.match(r.detail, /before your change/);
+  write(dir, 'package.json', '{}');
+  assert.strictEqual(run('typecheck', t).detail, 'skipped: no node_modules');
+});
