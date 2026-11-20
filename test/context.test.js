@@ -73,3 +73,23 @@ test('relevantFiles ranks by path words and caps the list', () => {
   assert.deepStrictEqual(ctx.relevantFiles(f.a, 'fix the router bug'), ['router.js']);
   assert.deepStrictEqual(ctx.relevantFiles(f.a, 'zzz'), []);
 });
+
+test('context: stale regression for "look at main", workflow-arg shape', () => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.b, 'new.js'), '2');
+  sh(f.b, 'add', '.');
+  sh(f.b, 'commit', '-qm', 'advance');
+  sh(f.b, 'push', '-q', 'origin', 'main');
+  const c = ctx.context('look at main and fix router.js typo', { cwd: f.a });
+  assert.strictEqual(c.ref.ref, 'main');
+  assert.strictEqual(c.ref.stale, true);
+  assert.strictEqual(c.base, c.head);
+  assert.ok(['small', 'planned', 'guarded', 'parallel', 'review'].includes(c.route));
+  assert.deepStrictEqual(c.files, ['router.js']);
+  assert.ok(Array.isArray(c.prefs));
+});
+
+test('context: no ref mention gives ref null', () => {
+  const f = fixture();
+  assert.strictEqual(ctx.context('fix typo in router.js', { cwd: f.a, offline: true }).ref, null);
+});
