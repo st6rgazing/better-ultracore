@@ -162,6 +162,25 @@ test('parallel: fileless items are rejected, result partial', async () => {
   assert.match(r.reason, /rejected fileless: b/);
 });
 
+test('agent throwing (budget exhausted) yields partial with completed steps kept', async () => {
+  const h = harness([bad('e1'), () => { throw new Error('budget exhausted'); }]);
+  const r = await h.engine.run({ request: 'x', route: 'small' });
+  assert.strictEqual(r.status, 'partial');
+  assert.match(r.reason, /budget exhausted/);
+  assert.deepStrictEqual(r.completed_steps.map((s) => s.id), ['code']);
+});
+
+test('parallel: null outcome counts as partial, no crash', async () => {
+  const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: ['y'], steps: [] }];
+  const engine = createEngine({
+    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : ok(['x'])),
+    parallel: async (thunks) => { const r = await Promise.all(thunks.map((t) => t())); r[1] = null; return r; },
+    log() {},
+  });
+  const r = await engine.run({ request: 'x', route: 'parallel' });
+  assert.strictEqual(r.status, 'partial');
+});
+
 test('uncertain confidence asks haiku with a schema to choose the route', async () => {
   const h = harness([{ route: 'small' }, ok()]);
   const r = await h.engine.run({ request: 'x', route: 'planned', confidence: 'uncertain' });
