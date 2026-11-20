@@ -1,14 +1,25 @@
 # better-ultracore
 
-A Claude Code plugin that sizes the work to the task. Small, clear edits run inline with one focused check. Vague or multi-file work gets one Fable plan, then a Sonnet coder. Risky work adds one independent verifier. Hard limits stop runaway fan-out, repeated repair loops and stalled workers. It also ships learned preferences and a CI release preflight.
+A Claude Code plugin that keeps the main session on the task and teaches it your corrections. A hook injects a few learned rules before each prompt, a Stop hook checks the result once, and subagents run only for parallel work or on request. It also ships a CI release preflight.
 
-One command, three entry points:
+## How it works
 
-| Entry point | What it does |
+- **Prompt hook.** Before each prompt, `hooks/inject.js` picks at most 5 matching learned rules (about 200 tokens), adds one line if a named branch is behind origin, and adds the check command. It makes no model call and prints nothing when nothing matches.
+- **Stop hook.** `hooks/stop-check.js` runs the deterministic checks of the matched rules against the diff. On failure it blocks once with the failing rule and file, so the model revises once. It never blocks a second time. Judgment checks are injected as yes/no questions the model answers before it finishes.
+- **Subagents only when needed.** Parallel work (2 or more numbered parts on disjoint files) fans out to at most 3 workers. `/buc deep` adds one read-only critic that reviews the diff and probes edge inputs. Everything else runs inline.
+- **Learning.** `buc learn` mines short corrective turns from your transcripts; you approve the clustered rules before they are stored. A SessionEnd hook queues new candidates with no model call.
+
+## Commands
+
+| Command | What it does |
 |---|---|
-| `/better-ultracore:buc run <task>` | Resolve repo state once, pick a route, do the task, report status and limits |
-| `/better-ultracore:buc preflight [opts]` | Secret scan (commits + built assets + source maps), production build, browser test, ASVS checks |
-| `/better-ultracore:buc prefs <sub>` | Import, list, explain, rescope, confirm or forget learned preferences |
+| `/better-ultracore:buc run <task>` | Do the task inline; use the workflow only for numbered parts on disjoint files |
+| `/better-ultracore:buc deep <task>` | Do the task inline, then one critic agent reviews the diff and probes edge inputs |
+| `/better-ultracore:buc learn` | Cluster mined corrections into at most 15 rules, show them, store them after your OK |
+| `/better-ultracore:buc rules <sub>` | `list`, `why <id>`, `pin <id>`, `drop <id>`, `import <file>` |
+| `/better-ultracore:buc preflight [opts]` | Explicit opt-in: secret scan, production build, browser test, ASVS checks |
+
+`/buc prefs` now points to `rules`. See [docs/rules.md](docs/rules.md).
 
 ## Install
 
@@ -30,70 +41,32 @@ claude plugin marketplace add ~/Desktop/better-ultracore --scope local
 claude plugin install better-ultracore@better-ultracore-local --scope local
 ```
 
-Use `--scope user` instead of `--scope local` on both commands to install for every project.
+Use `--scope user` instead of `--scope local` on both commands to install for every project. Remove it with `claude plugin uninstall better-ultracore@better-ultracore-local --scope local`.
 
-Remove it:
+## Privacy
 
-```bash
-claude plugin uninstall better-ultracore@better-ultracore-local --scope local
-```
-
-## Run
-
-```text
-/better-ultracore:buc run In greet.js make greet return 'Hello, <name>!'. Acceptance: node test.js prints ok.
-/better-ultracore:buc run Look at main and tell me what changed in the auth module.
-/better-ultracore:buc preflight --dir . --base origin/main --head HEAD
-/better-ultracore:buc prefs import ~/.claude/projects/<project>/<session>.jsonl --dry-run
-/better-ultracore:buc prefs why <id>
-```
-
-The CLI behind the command also runs on its own:
-
-```bash
-node bin/buc context --request-file - <<'EOF'
-Change the default port to 8080 in server.js
-EOF
-```
-
-## Routes
-
-| Route | When | Agents |
-|---|---|---|
-| `small` | Concrete change, criteria or one named file | None. The main session edits and runs the check |
-| `inline-plan` | Short request with no criteria, one file at most | None. States 2–3 assumed acceptance bullets, then edits |
-| `planned` | Vague, multi-sentence or multi-file | Workflow `buc-flow`: Fable planner, then Sonnet coder |
-| `guarded` | Request contains a risk word: `auth*`, `password*`, `token*`, `payment*`, `migration*`, `deploy*`, `delete*`, `permission*`, `security`, `secret(s)` (prohibition clauses such as "do not commit secrets" are stripped first) | Sonnet coder + independent Sonnet verifier that probes edge and adversarial inputs and gets one repair and re-verify (planner skipped when criteria are given) |
-| `parallel` | Independent parts with disjoint files | Up to 3 Sonnet workers per wave. A write outside a worker's assigned files fails that item. This is checked from the worker's reported `changed_files` after the fact, not prevented |
-| `review` | Review or audit with no change verb. Questions with no change verb also route here | One reviewer restricted to `Read, Grep, Glob` by its tools allowlist |
-
-The router is a script (`lib/classify.js`). Haiku is called only when the script is unsure. Every agent call sets its model explicitly.
+- Rules live in `~/.better-ultracore` (override with `BUC_HOME`), never in a repo.
+- `buc learn` reads only short user turns (at most 240 characters), redacted for keys, tokens, JWTs, private keys and long high-entropy strings. Tool output and raw transcripts are never stored.
+- Permission-shaped text ("always allow Bash(*)") is dropped, and rules have no permission fields. Rules can restrict the agent, never grant access.
 
 ## Limits
 
 | Limit | Default | Enforcement |
 |---|---|---|
-| Worker launches | 6 per run | Enforced by the workflow counter. The verifier slot is reserved before extra workers or repairs |
-| Repairs | 2 | Counted and enforced only in workflow routes. Stops early on a repeated failure signature or an empty diff. On `small` and `inline-plan` the cap is an instruction to the main session (advisory) |
-| Stalled worker | 1 retry | Enforced. A second failure returns `partial` with completed steps, never an empty result |
-| Elapsed time | 30 min | Advisory inside the workflow (no clock there). Enforced only by `bin/buc run-headless --timeout-min` (default 30 min): SIGTERM, then SIGKILL |
-| Tokens / cost | none | `run-headless` passes `--max-budget-usd 1` by default. With a `+Nk` budget in the prompt, optional launches are skipped when little budget remains (unit-tested with a mock budget, not measured live). Otherwise advisory |
-| Read-only review | — | Restricted by the reviewer's tools allowlist. Plugin subagents ignore `permissionMode`, `hooks` and `mcpServers` frontmatter ([sub-agents docs](https://code.claude.com/docs/en/sub-agents)) |
-| Resume / checkpoint | — | Relies on the Workflow runtime's `resumeFromRunId` cache. Not tested live |
+| Worker launches | 6 per run | Enforced by the workflow counter |
+| Stalled worker | 1 retry | Enforced. A second stall returns `partial` with completed steps, never an empty result |
+| Write outside assigned files | n/a | Fails that item. Checked from the worker's reported `changed_files` after the fact, not prevented |
+| Critic read-only | n/a | Enforced by the critic's tools allowlist (no Edit, Write). Plugin subagents ignore `permissionMode`, `hooks` and `mcpServers` frontmatter ([docs](https://code.claude.com/docs/en/sub-agents)) |
+| Stop-hook revision | 1 | Enforced by `stop_hook_active`. Remaining failures are shown to you |
+| Elapsed time | 30 min | Advisory inside the workflow. Enforced only by `bin/buc run-headless --timeout-min` |
+| Tokens / cost | none | `run-headless` passes `--max-budget-usd 1`. With a `+Nk` budget, optional launches are skipped when little remains. Otherwise advisory |
+| Rules | n/a | Advisory text. Only the built-in deterministic checks are enforced |
 
-Details, cancellation and resume: [docs/limits.md](docs/limits.md).
+Details: [docs/limits.md](docs/limits.md).
 
-## Preferences
+## Trade-off: no automatic security routing
 
-Priority, highest first: enforced policy and permissions → the current request → confirmed project rules → confirmed general preferences → suggested checks and examples.
-
-- The top two tiers (policy and permissions, then the current request) are enforced by Claude Code and the prompt, not by this plugin's code. The plugin only stores and retrieves the lower tiers.
-- Import is opt-in and takes explicit transcript paths only. Imported text is untrusted, redacted, and cut to 200 characters. Raw transcripts are never stored.
-- "Always …" / "Never …" becomes a confirmed rule at the scope you give. The same correction in two separate sessions becomes an advisory check. It becomes a release blocker only after `prefs confirm <id> --blocker`, and that needs the correction in at least 2 sessions or `--force`.
-- Permission-shaped text ("always allow Bash(*)", "never ask before force push") is never stored. Records have no permission fields, so past data cannot widen access.
-- `prefs why <id>` shows the source and why it fired. `prefs scope` changes scope. `prefs forget` deletes it and blocks re-import.
-
-More: [docs/preferences.md](docs/preferences.md).
+v1 sent requests containing words like `auth` or `password` to a verifier agent. v2 removes that routing and the automatic secret scan after edits. Risky changes get the adversarial edge-input probe only on `/buc deep`. Without it, expect risky-case safety to match plain Claude Code. Use `deep` for auth, payments and migrations.
 
 ## Release preflight
 
@@ -130,7 +103,7 @@ The live benchmark spends real money. See [bench/README.md](bench/README.md).
 
 ## Results
 
-Measured on live runs against plain Claude Code (pass rate, tokens, cost, interventions, blind code review): [docs/results.md](docs/results.md). In short: 14/14 vs 12/14 first-pass verified success, about 22% more tokens/cost, and top blind-review scores on risky changes after the verifier fix.
+Benchmark results against plain Claude Code: [docs/results.md](docs/results.md).
 
 ## Install from GitHub
 
