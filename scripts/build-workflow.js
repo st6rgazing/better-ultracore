@@ -5,10 +5,10 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const EXPORT_LINE = "if (typeof module !== 'undefined') module.exports = { createEngine, DEFAULT_LIMITS };";
-const OUT = path.join(ROOT, 'workflows', 'buc.js');
+const OUT = path.join(ROOT, 'workflows', 'buc-flow.js');
 
 const HEADER = `export const meta = {
-  name: 'buc',
+  name: 'buc-flow',
   description: 'better-ultracore: task-sized run with hard launch/repair limits',
   whenToUse: 'Multi-step, risky, parallel or review tasks that need routing, a launch/repair budget and a fresh verification. Not for few-line edits.',
   phases: [{ title: 'Route' }, { title: 'Work' }, { title: 'Verify' }],
@@ -33,7 +33,7 @@ if (require.main === module) {
   if (process.argv.includes('--check')) {
     const current = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : '';
     if (current !== out) {
-      console.error('workflows/buc.js is stale: run node scripts/build-workflow.js');
+      console.error('workflows/buc-flow.js is stale: run node scripts/build-workflow.js');
       process.exit(1);
     }
   } else {
