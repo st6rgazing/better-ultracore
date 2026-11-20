@@ -8,7 +8,8 @@ const { retrieve, render } = require('../lib/rules/retrieve');
 const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
-const { intentLine } = require('../lib/intent');
+const { intentLine, correctionLine } = require('../lib/intent');
+const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
 const MAX_CONTEXT = 800;
@@ -28,6 +29,20 @@ function staleLine(root, prompt) {
   return `You named ${ref}: run git fetch origin ${ref} (read-only for the checkout), then read files via git show origin/${ref}:<path> and cite the remote SHA. Do not use the local copy.`;
 }
 
+// True when this session already had an assistant turn (resumed or follow-up prompt).
+function hadPreviousTurn(sessionId, transcriptPath) {
+  if (sessionId && store.loadLastTurn(sessionId)) return true;
+  try {
+    const fd = fs.openSync(transcriptPath, 'r');
+    const { size } = fs.fstatSync(fd);
+    const n = Math.min(size, 65536);
+    const buf = Buffer.alloc(n);
+    fs.readSync(fd, buf, 0, n, size - n);
+    fs.closeSync(fd);
+    return buf.toString('utf8').includes('"type":"assistant"');
+  } catch { return false; }
+}
+
 // Keep the top rules that fit beside the fixed lines; the lowest-score rules go first.
 function fit(matched, fixed) {
   for (let n = matched.length; n >= 0; n--) {
@@ -41,7 +56,8 @@ function fit(matched, fixed) {
 }
 
 function run(input) {
-  const { prompt = '', cwd = process.cwd(), session_id: sessionId } = input;
+  const { prompt = '', cwd = process.cwd(), session_id: sessionId, transcript_path: transcriptPath } = input;
+  const hadPrev = hadPreviousTurn(sessionId, transcriptPath);
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
   const repo = root ? path.basename(root.trim()) : null;
   try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
@@ -52,7 +68,7 @@ function run(input) {
     const cmd = configuredCmd(root.trim());
     if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
   }
-  fixed.push(intentLine(prompt, { kind }), probeLine(prompt));
+  fixed.push(correctionLine(prompt, hadPrev) || intentLine(prompt, { kind }), probeLine(prompt));
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
   if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
   if (sessionId && !root) store.clearTurn(sessionId);
