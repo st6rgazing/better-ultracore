@@ -22,4 +22,4 @@ Short. Each finding names what it changed in the implementation.
 - v1 buc cost 1.4-3x plain Claude because it spawned subagents that re-read context (the #92349 pattern itself). `small` and `inline-plan` now run inline.
 - Stale branch: buc detected staleness but stopped to ask. It now reads `origin/<ref>` read-only and continues.
 - Leak case routed `guarded` because of "Do not commit secrets". Prohibition clauses are now stripped before the risk test.
-- `scan-diff` flagged a pre-existing `.env`. It now warns and the command gitignores the file without opening it.
+- `scan-diff` flagged a pre-existing `.env` (v1). v2 removed the automatic scan at the user's request.
