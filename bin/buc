@@ -12,7 +12,6 @@ const { DEFAULT_LIMITS } = require('../lib/engine');
 // DISPATCH HOOK: subcommands implemented by other modules, each exporting run(argv).
 // Guarded by an existence check so buc still works when a module is absent.
 const EXTERNAL = {
-  prefs: path.join(__dirname, '..', 'lib', 'prefs', 'cli.js'),
   preflight: path.join(__dirname, '..', 'lib', 'preflight', 'cli.js'),
   rules: path.join(__dirname, '..', 'lib', 'rules', 'cli.js'),
 };
@@ -118,7 +117,7 @@ async function main(argv) {
   const [sub, ...rest] = argv;
   if (commands[sub]) return commands[sub](rest);
   if (EXTERNAL[sub] && fs.existsSync(EXTERNAL[sub])) return require(EXTERNAL[sub]).run(rest);
-  console.error('usage: buc classify|context|affected|learn|check|rules|run-headless|prefs|preflight [options]');
+  console.error('usage: buc classify|context|affected|learn|check|rules|run-headless|preflight [options]');
   process.exitCode = 2;
 }
 
