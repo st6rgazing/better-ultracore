@@ -31,7 +31,20 @@ function parseArgs(argv) {
 }
 
 const sh = (script, dir) => spawnSync('sh', [script, dir], { encoding: 'utf8' });
-const read = (c, f) => fs.readFileSync(path.join(CASES_DIR, c, f), 'utf8').trim();
+
+// Case names from bench/cases and (when present) bench/private; public wins on a name clash.
+function listCases() {
+  const out = new Map();
+  for (const root of [PRIVATE_DIR, CASES_DIR]) {
+    if (!fs.existsSync(root)) continue;
+    for (const c of fs.readdirSync(root)) if (fs.existsSync(path.join(root, c, 'setup.sh'))) out.set(c, path.join(root, c));
+  }
+  return out;
+}
+const caseDirs = listCases();
+const caseDir = (c) => caseDirs.get(c);
+const read = (c, f) => fs.readFileSync(path.join(caseDir(c), f), 'utf8').trim();
+const has = (c, f) => fs.existsSync(path.join(caseDir(c), f));
 
 // Sum tokens across models: input includes cache read + creation.
 function sumTokens(modelUsage, usage) {
@@ -110,7 +123,7 @@ function liveRun(c, arm, rep, o) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), `bench-${c}-${arm}-`));
   const dir = path.join(parent, 'work');
   try {
-    const s = sh(path.join(CASES_DIR, c, 'setup.sh'), dir);
+    const s = sh(path.join(caseDir(c), 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
     if (ARMS[arm].claudeMd) writeClaudeMd(dir);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
@@ -123,7 +136,7 @@ function liveRun(c, arm, rep, o) {
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
     const runs = [];
     let interventions = 0;
-    if (fs.existsSync(path.join(CASES_DIR, c, 'correction.txt'))) {
+    if (has(c, 'correction.txt')) {
       runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin / 3, cwd: dir, env }));
       runs.push(headless(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env }));
       interventions = 1;
@@ -137,7 +150,7 @@ function liveRun(c, arm, rep, o) {
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
     // Final reply lands outside the repo so read-only cases can be accepted on what was said.
     fs.writeFileSync(path.join(parent, 'result.txt'), typeof last.result === 'string' ? last.result : '');
-    const accept = sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status === 0;
+    const accept = sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
     const diff = patchOf(dir, preUntracked);
     return {
       case: c, arm, rep,
@@ -163,11 +176,11 @@ function dryRun(c) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), `bench-dry-${c}-`));
   const dir = path.join(parent, 'work');
   try {
-    sh(path.join(CASES_DIR, c, 'setup.sh'), dir);
-    const unsolved = sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status;
-    const hasSolve = fs.existsSync(path.join(CASES_DIR, c, 'solve.sh'));
-    if (hasSolve) sh(path.join(CASES_DIR, c, 'solve.sh'), dir);
-    const solved = hasSolve ? sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status : null;
+    sh(path.join(caseDir(c), 'setup.sh'), dir);
+    const unsolved = sh(path.join(caseDir(c), 'accept.sh'), dir).status;
+    const hasSolve = fs.existsSync(path.join(caseDir(c), 'solve.sh'));
+    if (hasSolve) sh(path.join(caseDir(c), 'solve.sh'), dir);
+    const solved = hasSolve ? sh(path.join(caseDir(c), 'accept.sh'), dir).status : null;
     return { case: c, unsolved_fails: unsolved !== 0, solved_passes: solved === 0 };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 }
@@ -192,7 +205,7 @@ function table(rows) {
 
 function main(argv) {
   const f = parseArgs(argv);
-  const all = fs.readdirSync(CASES_DIR).filter((c) => fs.existsSync(path.join(CASES_DIR, c, 'setup.sh'))).sort();
+  const all = fs.readdirSync(CASES_DIR).filter((c) => fs.existsSync(path.join(caseDir(c), 'setup.sh'))).sort();
   const cases = f.cases ? f.cases.split(',') : all;
   for (const c of cases) if (!all.includes(c)) throw new Error(`unknown case: ${c}`);
   if (f.dry) {
