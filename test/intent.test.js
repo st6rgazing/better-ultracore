@@ -24,7 +24,7 @@ test('fires on every private bench prompt', (t) => {
     if (!fs.existsSync(f)) continue;
     const line = intentLine(fs.readFileSync(f, 'utf8'));
     assert.ok(line, d + ' should fire');
-    assert.ok(line.length <= 240, d);
+    assert.ok(line.length <= 330, d);
     n++;
   }
   if (!n) t.skip('no private prompts');
@@ -61,4 +61,15 @@ test('vague fix of a screen asks to infer the defect', () => {
     assert.match(intentLine(p), /names no defect/, p);
   }
   assert.doesNotMatch(intentLine('fix the overflow on the settings page'), /names no defect/);
+});
+
+test('feature requests get the end-to-end line, narrowing cues keep the literal one', () => {
+  const e2e = intentLine('make it so guests see all options greyed out');
+  assert.match(e2e, /where the user will see it/);
+  assert.doesNotMatch(e2e, /touch only what is named/);
+  assert.match(e2e, /do not ask/);
+  assert.ok(e2e.length <= 330, String(e2e.length));
+  for (const p of ['make the card slightly smaller', 'fix only 1 and 2', 'rename x in src/a.js', 'just one button']) {
+    assert.match(intentLine(p), /touch only what is named/, p);
+  }
 });
