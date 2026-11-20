@@ -54,7 +54,7 @@ test('inject prints nothing for irrelevant prompts and injects matched rules', (
 test('inject stores the turn baseline only for rules with a check', () => {
   const dir = repo();
   const home = tmp('buc-home-');
-  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  seed(home, [rule('advice-means-no-edits', { keywords: ['tell'], promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
   fs.writeFileSync(path.join(dir, 'dirty.txt'), 'x\n');
   hook('inject.js', { prompt: 'tell me what this does', cwd: dir, session_id: 's2' }, home);
   const turn = JSON.parse(fs.readFileSync(path.join(home, 'turn-s2.json'), 'utf8'));
@@ -83,7 +83,7 @@ test('inject: no remote → nothing; named ref → fetch-and-read hint; known ah
 test('stop-check blocks once, never when stop_hook_active, and counts the violation', () => {
   const dir = repo();
   const home = tmp('buc-home-');
-  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  seed(home, [rule('advice-means-no-edits', { keywords: ['tell'], promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
   hook('inject.js', { prompt: 'tell me what this does', cwd: dir, session_id: 's4' }, home);
   const turnFile = path.join(home, 'turn-s4.json');
   assert.strictEqual(hook('stop-check.js', { session_id: 's4', cwd: dir }, home), null);
@@ -102,7 +102,7 @@ test('stop-check blocks once, never when stop_hook_active, and counts the violat
 test('inject stores a redacted prompt in the turn file', () => {
   const dir = repo();
   const home = tmp('buc-home-');
-  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  seed(home, [rule('advice-means-no-edits', { keywords: ['tell'], promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
   hook('inject.js', { prompt: 'tell me what this does, token=abc123secretvalue', cwd: dir, session_id: 's4d' }, home);
   assert.ok(!fs.readFileSync(path.join(home, 'turn-s4d.json'), 'utf8').includes('abc123secretvalue'));
 });
@@ -110,7 +110,7 @@ test('inject stores a redacted prompt in the turn file', () => {
 test('a prompt with nothing to check drops the previous turn file', () => {
   const dir = repo();
   const home = tmp('buc-home-');
-  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  seed(home, [rule('advice-means-no-edits', { keywords: ['tell'], promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
   hook('inject.js', { prompt: 'tell me what this does', cwd: dir, session_id: 's4b' }, home);
   hook('inject.js', { prompt: 'fix the header', cwd: dir, session_id: 's4b' }, home);
   fs.writeFileSync(path.join(dir, 'app.js'), 'edited\n');
@@ -120,7 +120,7 @@ test('a prompt with nothing to check drops the previous turn file', () => {
 test('checks run from the repo root when the prompt came from a subdirectory', () => {
   const dir = repo();
   const home = tmp('buc-home-');
-  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  seed(home, [rule('advice-means-no-edits', { keywords: ['tell'], promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
   fs.mkdirSync(path.join(dir, 'sub'));
   const sub = path.join(dir, 'sub');
   hook('inject.js', { prompt: 'tell me what this does', cwd: sub, session_id: 's4c' }, home);
