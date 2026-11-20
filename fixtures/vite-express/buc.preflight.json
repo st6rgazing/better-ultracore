@@ -1,0 +1,23 @@
+{
+  "build": { "cmd": "npm run build", "allowMaps": false },
+  "secrets": { "salt": "vite-express-fixture" },
+  "asvs": [
+    { "id": "asvs-v2-auth", "title": "V2 authentication", "evaluator": "auth", "noAuth": true },
+    { "id": "asvs-v3-sessions", "title": "V3 sessions", "evaluator": "sessions", "serverFile": "server.js" },
+    {
+      "id": "asvs-v4-access",
+      "title": "V4 per-record access control",
+      "evaluator": "perRecord",
+      "routes": [{ "route": "/api/notes/:id", "test": "e2e/api.spec.js" }]
+    },
+    {
+      "id": "asvs-v5-validation",
+      "title": "V5 input validation",
+      "evaluator": "inputValidation",
+      "routes": [{ "route": "/api/notes", "test": "e2e/api.spec.js" }]
+    },
+    { "id": "asvs-v14-deps", "title": "V14 dependencies", "evaluator": "deps" },
+    { "id": "asvs-v14-config", "title": "V14 production config", "evaluator": "prodConfig", "serverFile": "server.js" },
+    { "id": "deploy-permissions", "title": "Branch protection and deploy permissions", "evaluator": "deployPermissions" }
+  ]
+}
