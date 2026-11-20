@@ -1,0 +1,1 @@
+add three small functions to util.js: double(n), isEven(n) and clamp(n, lo, hi), exported. commit each one separately
