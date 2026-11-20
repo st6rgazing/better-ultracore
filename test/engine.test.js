@@ -136,10 +136,30 @@ test('confident known route never calls the router', async () => {
   assert.ok(h.calls.every((c) => c.model !== 'haiku'));
 });
 
-test('guarded: verifier defects give partial', async () => {
-  const r = await harness([plan(), ok(), vok({ defects: ['off by one'] })]).engine.run({ request: 'x', route: 'guarded' });
+test('guarded: persistent verifier defects give partial after one repair', async () => {
+  const h = harness([ok(), vok({ defects: ['off by one'] }), ok(), vok({ defects: ['still off'] })]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1 });
   assert.strictEqual(r.status, 'partial');
-  assert.deepStrictEqual(r.defects, ['off by one']);
+  assert.strictEqual(r.launches, 4);
+  assert.deepStrictEqual(r.defects, ['still off']);
+});
+
+test('guarded: defects, one repair with defect list, re-verify passes', async () => {
+  const h = harness([ok(), vok({ defects: ['empty hash verifies'] }), ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1 });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(r.launches, 4);
+  assert.strictEqual(r.repairs, 1);
+  assert.ok(h.calls[2].prompt.includes('empty hash verifies'));
+  assert.strictEqual(h.calls[2].agentType, 'better-ultracore:coder');
+  assert.ok(h.calls[1].prompt.includes('tmpdir'));
+});
+
+test('guarded: re-verify keeps its reserved slot', async () => {
+  const h = harness([ok(), vok({ defects: ['d'] }), ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1, limits: { maxLaunches: 4 } });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(r.launches, 4);
 });
 
 test('guarded: repairs denied before verifier slot is starved', async () => {
