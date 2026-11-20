@@ -33,3 +33,31 @@ test('repoInfo reports root, head, branch, upstream', () => {
   assert.strictEqual(info.branch, 'main');
   assert.strictEqual(info.upstream, 'origin/main');
 });
+
+test('refStatus: fresh clone is not stale', () => {
+  const f = fixture();
+  const r = ctx.refStatus(f.a, 'main');
+  assert.strictEqual(r.stale, false);
+  assert.strictEqual(r.local_sha, r.remote_sha);
+});
+
+test('refStatus: remote advanced elsewhere is stale', () => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.b, 'new.js'), '2');
+  sh(f.b, 'add', '.');
+  sh(f.b, 'commit', '-qm', 'advance');
+  sh(f.b, 'push', '-q', 'origin', 'main');
+  const r = ctx.refStatus(f.a, 'main');
+  assert.strictEqual(r.stale, true);
+  assert.notStrictEqual(r.local_sha, r.remote_sha);
+});
+
+test('refStatus: offline skips the network and is never stale', () => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.b, 'new.js'), '2');
+  sh(f.b, 'add', '.');
+  sh(f.b, 'commit', '-qm', 'advance');
+  sh(f.b, 'push', '-q', 'origin', 'main');
+  const r = ctx.refStatus(f.a, 'main', { offline: true });
+  assert.deepStrictEqual([r.remote_sha, r.stale], [null, false]);
+});
