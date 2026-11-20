@@ -55,6 +55,43 @@ function headless(prompt, { arm, budget, timeoutMin, cwd }) {
   try { return JSON.parse(line); } catch { return { exit: p.status, timed_out: false, elapsed_ms: 0, result: (p.stderr || '').slice(0, 500) }; }
 }
 
+// Independent token count: every transcript the run wrote (main loop, subagents, workflow agents), deduped by message id.
+function transcriptTokens(dir) {
+  const slug = fs.realpathSync(dir).replace(/[^a-zA-Z0-9]/g, '-');
+  const proj = path.join(os.homedir(), '.claude', 'projects', slug);
+  const t = { input: 0, output: 0, files: 0 };
+  if (!fs.existsSync(proj)) return null;
+  const seen = new Set();
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+    const f = path.join(d, e.name);
+    if (e.isDirectory()) return walk(f);
+    if (!f.endsWith('.jsonl')) return;
+    t.files++;
+    for (const line of fs.readFileSync(f, 'utf8').split('\n')) {
+      let o; try { o = JSON.parse(line); } catch { continue; }
+      const m = o && o.message;
+      if (!m || !m.usage || o.type !== 'assistant') continue;
+      const key = `${f}|${m.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      t.input += (m.usage.input_tokens || 0) + (m.usage.cache_read_input_tokens || 0) + (m.usage.cache_creation_input_tokens || 0);
+      t.output += m.usage.output_tokens || 0;
+    }
+  });
+  walk(proj);
+  return t;
+}
+
+// The run's patch against the fixture's first commit, untracked files included.
+function patchOf(dir) {
+  const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '';
+  const root = git('rev-list', '--max-parents=0', 'HEAD').trim().split('\n')[0];
+  git('add', '-N', '.');
+  const stat = git('diff', '--numstat', root).trim().split('\n').filter(Boolean)
+    .map((l) => { const [a, d, f] = l.split('\t'); return { file: f, added: +a || 0, deleted: +d || 0 }; });
+  return { root, stat, patch: git('diff', root).slice(0, 20000) };
+}
+
 function liveRun(c, arm, rep, o) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), `bench-${c}-${arm}-`));
   const dir = path.join(parent, 'work');
@@ -75,9 +112,15 @@ function liveRun(c, arm, rep, o) {
     if (typeof last.result === 'string' && last.result.trim().endsWith('?')) interventions += 1;
     const sum = (f) => runs.reduce((n, r) => n + (f(r) || 0), 0);
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
+    const accept = sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status === 0;
+    const diff = patchOf(dir);
     return {
       case: c, arm, rep,
-      accept_pass: sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status === 0,
+      accept_pass: accept,
+      transcript_tokens: transcriptTokens(dir),
+      files_changed: diff.stat.map((x) => x.file),
+      lines_changed: diff.stat.reduce((n, x) => n + x.added + x.deleted, 0),
+      patch: diff.patch,
       exit: last.exit, timed_out: !!last.timed_out,
       elapsed_ms: sum((r) => r.elapsed_ms),
       total_cost_usd: sum((r) => r.total_cost_usd),
