@@ -73,3 +73,14 @@ test('feature requests get the end-to-end line, narrowing cues keep the literal 
     assert.match(intentLine(p), /touch only what is named/, p);
   }
 });
+
+test('correctionLine fires only after a previous turn', () => {
+  const { correctionLine } = require('../lib/intent');
+  assert.strictEqual(correctionLine('still broken', false), '');
+  assert.match(correctionLine('still broken', true), /did not work for the user/);
+  assert.match(correctionLine("it doesn't work on mobile", true), /did not work/);
+  assert.match(correctionLine('no thats not what i meant', true), /different reading/);
+  assert.doesNotMatch(correctionLine('no thats not what i meant', true), /\?$/);
+  assert.match(correctionLine('no wait undo ur changes just show me how', true), /text only/);
+  assert.strictEqual(correctionLine('add a logout button', true), '');
+});
