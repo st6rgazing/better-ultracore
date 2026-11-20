@@ -100,3 +100,33 @@ test('planned: open questions return needs_user without coding', async () => {
   assert.deepStrictEqual(r.questions, ['which db?']);
   assert.strictEqual(h.calls.length, 1);
 });
+
+const vok = (over = {}) => ({ ...ok(), defects: [], ...over });
+
+test('guarded: planner, coder, verifier with agentType and git diff base', async () => {
+  const h = harness([plan(), ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', base: 'abc123' });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(h.calls[2].agentType, 'better-ultracore:verifier');
+  assert.match(h.calls[2].prompt, /git diff abc123/);
+});
+
+test('guarded: verifier defects give partial', async () => {
+  const r = await harness([plan(), ok(), vok({ defects: ['off by one'] })]).engine.run({ request: 'x', route: 'guarded' });
+  assert.strictEqual(r.status, 'partial');
+  assert.deepStrictEqual(r.defects, ['off by one']);
+});
+
+test('guarded: repairs denied before verifier slot is starved', async () => {
+  const h = harness([plan(), bad('alpha'), bad('beta'), bad('gamma'), bad('delta')]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', limits: { maxLaunches: 3 } });
+  assert.strictEqual(r.launches, 2);
+  assert.match(r.reason, /maxLaunches/);
+});
+
+test('guarded: verifier still runs when launches are otherwise used up', async () => {
+  const h = harness([plan(), ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', limits: { maxLaunches: 3 } });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(r.launches, 3);
+});
