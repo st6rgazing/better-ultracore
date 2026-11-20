@@ -86,7 +86,8 @@ test('context: stale regression for "look at main", workflow-arg shape', () => {
   assert.strictEqual(c.base, c.head);
   assert.ok(['small', 'planned', 'guarded', 'parallel', 'review'].includes(c.route));
   assert.deepStrictEqual(c.files, ['router.js']);
-  assert.ok(Array.isArray(c.prefs));
+  assert.strictEqual(c.prefs, undefined);
+  assert.strictEqual(c.blockers, undefined);
 });
 
 test('context: stale ref is fetched read-only; read_from, remote_sha and conflict_files', () => {
@@ -126,6 +127,19 @@ test('context: blocker prefs are split from advisory prefs; deadline is computed
   assert.deepStrictEqual(c.prefs, ['adv: zebra rule']);
   assert.deepStrictEqual(c.blockers, ['blk: run the zebra check']);
   assert.strictEqual(c.deadlineMs - c.startedAtMs, 30 * 60000);
+});
+
+test('context: empty files key is omitted; workflow routes get fallback_steps, others none', () => {
+  const f = fixture();
+  const small = ctx.context('fix typo in router.js. Acceptance: node -v', { cwd: f.a, offline: true });
+  assert.strictEqual(small.fallback_steps, undefined);
+  const g = ctx.context('fix the auth token bug in router.js. Acceptance: node -v', { cwd: f.a, offline: true });
+  assert.strictEqual(g.route, 'guarded');
+  assert.deepStrictEqual(g.fallback_steps.map((x) => x.match(/better-ultracore:\w+/)[0]), ['better-ultracore:coder', 'better-ultracore:verifier']);
+  const p = ctx.context('add a feature for exporting reports', { cwd: f.a, offline: true });
+  assert.strictEqual(p.route, 'planned');
+  assert.strictEqual(p.files, undefined);
+  assert.strictEqual(p.fallback_steps.length, 2);
 });
 
 test('context: no ref mention gives ref null', () => {
