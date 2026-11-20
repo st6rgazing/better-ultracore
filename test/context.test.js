@@ -159,6 +159,8 @@ test('checkCmd takes the command named in the request', () => {
   assert.strictEqual(checkCmd('/nonexistent', 'Fix it. Acceptance: node test.js prints ok.'), 'node test.js');
   assert.strictEqual(checkCmd('/nonexistent', 'Run `npm run e2e` after'), 'npm run e2e');
   assert.strictEqual(checkCmd('/nonexistent', 'make it nicer'), '');
+  assert.strictEqual(checkCmd('/nonexistent', 'Fix it; npm test should pass'), 'npm test');
+  assert.strictEqual(checkCmd('/nonexistent', 'Rename x. go test ./... must still pass.'), 'go test ./...');
 });
 
 test('context: single named file stays small despite fuzzy matches', () => {
