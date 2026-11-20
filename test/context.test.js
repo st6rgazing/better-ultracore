@@ -93,3 +93,10 @@ test('context: no ref mention gives ref null', () => {
   const f = fixture();
   assert.strictEqual(ctx.context('fix typo in router.js', { cwd: f.a, offline: true }).ref, null);
 });
+
+test('affected: steps touching corrected files or areas', () => {
+  const steps = [{ id: 'work:a', files: ['lib/a.js'] }, { id: 'work:b', files: ['ui/b.js'] }, { id: 'verify', files: [] }];
+  assert.deepStrictEqual(ctx.affected(steps, ['lib/a.js']), ['work:a']);
+  assert.deepStrictEqual(ctx.affected(steps, ['ui']), ['work:b']);
+  assert.deepStrictEqual(ctx.affected(steps, ['docs/']), []);
+});
