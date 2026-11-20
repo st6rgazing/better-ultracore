@@ -1,0 +1,1 @@
+don't let hints persist to the next round
