@@ -5,7 +5,13 @@ argument-hint: "run <task> | preflight [opts] | prefs <sub>"
 Arguments: `$ARGUMENTS`. The first word picks the mode.
 
 ## run <task>
-1. Run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc context --request "<task>"`. It returns JSON: route, reason, confidence, base, files, prefs, checkCmd, and `ref` when a branch was mentioned.
+1. Pass the task on stdin through a quoted heredoc so quotes, backticks and `$(...)` in it are never interpreted by the shell (put the task text verbatim between the markers):
+   ```
+   node ${CLAUDE_PLUGIN_ROOT}/bin/buc context --request-file - <<'BUC_TASK'
+   <task>
+   BUC_TASK
+   ```
+   (`prefs retrieve` accepts `--request-file -` the same way.) It returns JSON: route, reason, confidence, base, files, prefs, checkCmd, and `ref` when a branch was mentioned.
 2. If `ref.stale` is true, tell the user the local branch is behind origin and stop, unless they asked to use the local copy.
 3. Print one line: `route=<route>: <reason>`.
 4. Route `small`: never call the Workflow tool. Make one Agent call with `subagent_type: better-ultracore:coder` and a short brief (task, files, checkCmd); if the Agent tool is unavailable, make the edit yourself. Then run `checkCmd` once. At most 2 repair attempts, and stop if the same error repeats.

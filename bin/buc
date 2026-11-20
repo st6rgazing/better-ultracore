@@ -5,6 +5,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { classify } = require('../lib/classify');
 const { context, affected } = require('../lib/context');
+const { readRequest } = require('../lib/request');
 
 // DISPATCH HOOK: subcommands implemented by other modules, each exporting run(argv).
 // Guarded by an existence check so buc still works when a module is absent.
@@ -29,14 +30,15 @@ function parseFlags(argv) {
 
 const commands = {
   classify(argv) {
-    const f = parseFlags(argv);
-    if (!f.request) throw new Error('classify needs --request "<text>"');
-    console.log(JSON.stringify(classify(f.request)));
+    const request = readRequest(parseFlags(argv));
+    if (!request) throw new Error('classify needs --request "<text>" or --request-file <path|->');
+    console.log(JSON.stringify(classify(request)));
   },
   context(argv) {
     const f = parseFlags(argv);
-    if (!f.request) throw new Error('context needs --request "<text>"');
-    console.log(JSON.stringify(context(f.request, { ref: f.ref, offline: f.offline })));
+    const request = readRequest(f);
+    if (!request) throw new Error('context needs --request "<text>" or --request-file <path|->');
+    console.log(JSON.stringify(context(request, { ref: f.ref, offline: f.offline })));
   },
   // buc affected --steps checkpoint.json --files a,b  (checkpoint: result JSON or its completed_steps array)
   affected(argv) {

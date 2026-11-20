@@ -108,6 +108,14 @@ test('buc classify prints route JSON', () => {
   assert.strictEqual(buc('classify', '--request', 'review the auth module').route, 'review');
 });
 
+test('buc context --request-file - round-trips shell metacharacters verbatim', () => {
+  const req = 'Fix `rm -rf /` and $(whoami) in "server.js"; echo \'$HOME\'';
+  const out = JSON.parse(execFileSync('node', [BUC, 'context', '--request-file', '-', '--offline'], { input: `${req}\n`, encoding: 'utf8' }));
+  assert.strictEqual(out.request, req);
+  const cls = JSON.parse(execFileSync('node', [BUC, 'classify', '--request-file', '-'], { input: `${req}\n`, encoding: 'utf8' }));
+  assert.ok(cls.route);
+});
+
 test('buc affected lists steps to rerun and keep', () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-st-')), 's.json');
   fs.writeFileSync(file, JSON.stringify({ completed_steps: [{ id: 'a', files: ['x/1.js'] }, { id: 'b', files: ['y/2.js'] }] }));
