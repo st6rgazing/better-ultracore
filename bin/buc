@@ -50,6 +50,12 @@ const commands = {
     const rerun = affected(steps, areas);
     console.log(JSON.stringify({ since: f.since || null, rerun, keep: steps.map((s) => s.id).filter((id) => !rerun.includes(id)) }));
   },
+  // buc scan-diff: secret scan of `git diff HEAD` plus untracked files. Prints rule/file/line only; exit 1 on findings.
+  'scan-diff'() {
+    const findings = require('../lib/preflight/secrets').scanWorkingTree(process.cwd());
+    for (const f of findings) console.log(`${f.rule} ${f.file}:${f.line}`);
+    return findings.length ? 1 : 0;
+  },
   // Wall clock enforced here: SIGTERM at the timeout, SIGKILL after a grace period.
   'run-headless'(argv) {
     const f = parseFlags(argv);
@@ -93,7 +99,7 @@ async function main(argv) {
   const [sub, ...rest] = argv;
   if (commands[sub]) return commands[sub](rest);
   if (EXTERNAL[sub] && fs.existsSync(EXTERNAL[sub])) return require(EXTERNAL[sub]).run(rest);
-  console.error('usage: buc classify|context|affected|run-headless|prefs|preflight [options]');
+  console.error('usage: buc classify|context|affected|scan-diff|run-headless|prefs|preflight [options]');
   process.exitCode = 2;
 }
 
