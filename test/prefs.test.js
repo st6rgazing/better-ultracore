@@ -41,3 +41,10 @@ test('fake secret never reaches the store file', () => {
   assert.ok(!raw.includes('FAKE0000'));
   assert.ok(!raw.includes('sk-test'));
 });
+
+test('same correction in two sessions becomes a suggested check', () => {
+  const rec = byText(importAll(setup()), /code snippets minimal/i);
+  assert.deepEqual(rec.sessions, ['s1', 's2']);
+  assert.equal(rec.kind, 'check');
+  assert.equal(rec.status, 'suggested');
+});
