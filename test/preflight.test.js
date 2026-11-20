@@ -85,3 +85,11 @@ test('promote verify mismatch fails, match passes', () => {
   assert.strictEqual(r.status, 1);
   assert.match(r.stdout, /failed/);
 });
+
+test('bin/buc preflight propagates a failing exit code (CI gate)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-bin-'));
+  execFileSync('bash', [path.join(ROOT, 'fixtures/repos/make-leak-repo.sh'), path.join(dir, 'leak')], { stdio: 'ignore' });
+  const r = spawnSync('node', [path.join(ROOT, 'bin/buc'), 'preflight', '--dir', path.join(dir, 'leak'), '--base', 'HEAD~1', '--head', 'HEAD',
+    '--skip-build', '--skip-browser', '--out', path.join(dir, 'out')], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 1);
+});
