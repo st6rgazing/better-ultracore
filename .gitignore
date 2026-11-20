@@ -6,3 +6,4 @@ evals/results/
 fixtures/vite-express/dist/
 fixtures/vite-express/test-results/
 fixtures/vite-express/playwright-report/
+.DS_Store
