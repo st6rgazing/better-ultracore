@@ -43,6 +43,17 @@ function hadPreviousTurn(sessionId, transcriptPath) {
   } catch { return false; }
 }
 
+// Fixed lines get at most MAX_FIXED chars so rules keep room; drop in the given order (verify, probe, intent).
+const MAX_FIXED = 500;
+function capFixed(fixed, dropOrder) {
+  const size = () => fixed.filter(Boolean).join('\n').length;
+  for (const line of dropOrder) {
+    if (size() <= MAX_FIXED) return;
+    const i = line ? fixed.indexOf(line) : -1;
+    if (i >= 0) fixed[i] = '';
+  }
+}
+
 // Keep the top rules that fit beside the fixed lines; the lowest-score rules go first.
 function fit(matched, fixed) {
   for (let n = matched.length; n >= 0; n--) {
@@ -69,8 +80,10 @@ function run(input) {
     if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
   }
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
-  if (tc) fixed.push(`Verify with ${tc} (the repo script, not npx) and report what you ran; if it is blocked, say so once.`);
-  fixed.push(correctionLine(prompt, hadPrev) || intentLine(prompt, { kind }), probeLine(prompt));
+  if (tc) fixed.push(`Verify with ${tc} (not npx); report what you ran.`);
+  const intent = correctionLine(prompt, hadPrev) || intentLine(prompt, { kind });
+  fixed.push(intent, probeLine(prompt));
+  capFixed(fixed, [tc && fixed.find((l) => l.startsWith('Verify with')), fixed[fixed.length - 1], intent]);
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
   if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
   if (sessionId && !root) store.clearTurn(sessionId);
