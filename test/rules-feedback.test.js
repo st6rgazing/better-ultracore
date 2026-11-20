@@ -47,7 +47,10 @@ test('a normal follow-up promotes and saves nothing to the inbox', () => {
   assert.deepStrictEqual(stats().r1, { hits: 1, misses: 0 });
   assert.deepStrictEqual(store.readInbox(), []);
   const r = store.loadRules()[0];
-  assert.ok(store.score(r, Date.now(), 'r1') > store.score(r, Date.now(), 'other'));
+  const now = Date.now();
+  assert.strictEqual(store.score(r, now, 'r1'), store.score(r, now));
+  // hits offset earlier misses: 1 miss alone is 1/3 of base, 1 miss with 2 hits is 3/5
+  assert.ok(store.score({ ...r, byRepo: { r1: { hits: 2, misses: 1 } } }, now, 'r1') > store.score({ ...r, byRepo: { r1: { hits: 0, misses: 1 } } }, now, 'r1'));
 });
 
 test('no previous turn means no change and no throw', () => {
