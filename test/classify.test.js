@@ -8,6 +8,7 @@ const table = [
   ['explain how the router works', 'review'],
   ['audit src/api.js', 'review'],
   ['check the deploy script for mistakes', 'review'],
+  ['fix the password reset flow', 'small'],
   ['rename foo to bar in lib/util.js', 'small'],
   ['fix typo in README.md heading', 'small'],
   ['add a --json flag; it must print valid JSON. Run node --test', 'small'],
