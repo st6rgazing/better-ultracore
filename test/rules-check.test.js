@@ -53,6 +53,21 @@ test('only-named-files allows named files, tests and lockfiles', () => {
   assert.match(r.detail, /other\.js/);
 });
 
+test('only-named-files ignores non-file tokens and prompts without an only cue', () => {
+  const dir = repo();
+  write(dir, 'other.js', 'y\n');
+  assert.strictEqual(run('only-named-files', turn(dir, 'update app.js')).pass, true);
+  git(dir, 'checkout', '-q', 'other.js');
+  const t = turn(dir, 'only bump version 1.2 and e.g. fix it');
+  write(dir, 'other.js', 'z\n');
+  assert.strictEqual(run('only-named-files', t).pass, true);
+  git(dir, 'checkout', '-q', 'other.js');
+  const u = turn(dir, 'just change app.js, nothing else');
+  write(dir, 'app.js', 'a\n');
+  write(dir, 'other.js', 'q\n');
+  assert.match(run('only-named-files', u).detail, /other\.js/);
+});
+
 test('no-ai-traces checks added lines and new commit messages, not pre-existing dirt', () => {
   const dir = repo();
   write(dir, 'other.js', '// Generated with a tool\n');
