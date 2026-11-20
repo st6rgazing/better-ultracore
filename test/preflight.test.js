@@ -69,8 +69,12 @@ test('missing ownership test is unverified and fails when required', () => {
   assert.strictEqual(checkOf(d, 'asvs-v4-access').status, 'unverified');
 
   fs.writeFileSync(path.join(d, 'own.spec.js'), "test('/api/notes/:id forbids other users', () => {});\n");
-  assert.strictEqual(buc(d, SKIP).status, 0);
-  assert.strictEqual(checkOf(d, 'asvs-v4-access').status, 'passed');
+  // Evidence present but browser run skipped: still unverified.
+  assert.strictEqual(buc(d, SKIP).status, 1);
+  assert.strictEqual(checkOf(d, 'asvs-v4-access').status, 'unverified');
+  const { evaluate } = require('../lib/preflight/asvs');
+  assert.strictEqual(evaluate(d, asvs, { browser: 'passed' })[0].status, 'passed');
+  assert.strictEqual(evaluate(d, asvs, { browser: 'failed' })[0].status, 'unverified');
 });
 
 test('promote verify mismatch fails, match passes', () => {
