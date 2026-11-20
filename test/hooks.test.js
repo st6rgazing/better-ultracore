@@ -36,7 +36,9 @@ const rule = (id, when, check = {}) => ({ id, rule: `Rule ${id}.`, when: { keywo
 test('hooks.json registers the three hooks', () => {
   const { hooks } = JSON.parse(fs.readFileSync(path.join(HOOKS, 'hooks.json'), 'utf8'));
   assert.deepStrictEqual(Object.keys(hooks), ['UserPromptSubmit', 'Stop', 'SessionEnd']);
-  for (const e of Object.values(hooks)) assert.match(e[0].hooks[0].command, /^node \$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/[\w-]+\.js$/);
+  for (const e of Object.values(hooks)) assert.match(e[0].hooks[0].command, /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/[\w-]+\.js"$/);
+  const timeouts = Object.values(hooks).map((e) => e[0].hooks[0].timeout);
+  assert.deepStrictEqual(timeouts, [10, 120, 30]);
 });
 
 test('inject prints nothing for irrelevant prompts and injects matched rules', () => {
