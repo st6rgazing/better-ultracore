@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// 3-arm benchmark harness. See bench/README.md.
+// 4-arm benchmark harness. See bench/README.md.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -8,16 +8,18 @@ const { spawnSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
 const CASES_DIR = path.join(__dirname, 'cases');
+const RULES = path.join(__dirname, 'fixtures', 'rules.json');
 const ALLOWED_TOOLS = 'Bash(node:*),Bash(npm:*),Bash(git:*),Agent,Workflow,Read,Edit,Write,Grep,Glob';
 
 const ARMS = {
   plain: { noPlugin: true, prefix: '', budgetMult: 1 },
-  buc: { noPlugin: false, prefix: '/better-ultracore:buc run ', budgetMult: 1 },
+  'plain-claudemd': { noPlugin: true, prefix: '', budgetMult: 1, claudeMd: true },
+  buc: { noPlugin: false, prefix: '', budgetMult: 1, bucHome: true },
   ultra: { noPlugin: true, prefix: 'ultracode ', budgetMult: 2 },
 };
 
 function parseArgs(argv) {
-  const f = { arms: 'plain,buc,ultra', n: '1', budget: '1', 'timeout-min': '10' };
+  const f = { arms: 'plain,plain-claudemd,buc,ultra', n: '1', budget: '1', 'timeout-min': '10' };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i].replace(/^--/, '');
     f[k] = k === 'dry' ? true : argv[++i];
@@ -44,13 +46,13 @@ function sumTokens(modelUsage, usage) {
   return t;
 }
 
-function headless(prompt, { arm, budget, timeoutMin, cwd }) {
+function headless(prompt, { arm, budget, timeoutMin, cwd, env }) {
   const a = ARMS[arm];
   const args = [path.join(ROOT, 'bin', 'buc'), 'run-headless', '--cwd', cwd, '--prompt', a.prefix + prompt,
     '--model', 'sonnet', '--max-budget-usd', String(budget * a.budgetMult), '--timeout-min', String(timeoutMin),
     '--allowed-tools', ALLOWED_TOOLS];
   if (a.noPlugin) args.push('--no-plugin'); else args.push('--plugin-dir', ROOT);
-  const p = spawnSync('node', args, { encoding: 'utf8', maxBuffer: 1 << 28, cwd: ROOT });
+  const p = spawnSync('node', args, { encoding: 'utf8', maxBuffer: 1 << 28, cwd: ROOT, env });
   const line = (p.stdout || '').trim().split('\n').pop();
   try { return JSON.parse(line); } catch { return { exit: p.status, timed_out: false, elapsed_ms: 0, result: (p.stderr || '').slice(0, 500) }; }
 }
@@ -94,22 +96,36 @@ function patchOf(dir, preUntracked = []) {
   return { root, stat, patch: git('diff', root).slice(0, 20000) };
 }
 
+// Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
+function writeClaudeMd(dir) {
+  const rules = JSON.parse(fs.readFileSync(RULES, 'utf8'));
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), `# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
+  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'CLAUDE.md\n');
+}
+
 function liveRun(c, arm, rep, o) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), `bench-${c}-${arm}-`));
   const dir = path.join(parent, 'work');
   try {
     const s = sh(path.join(CASES_DIR, c, 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
+    if (ARMS[arm].claudeMd) writeClaudeMd(dir);
+    // Each buc run gets its own copy of the seeded rules so runs never share learned state.
+    const env = { ...process.env };
+    if (ARMS[arm].bucHome) {
+      env.BUC_HOME = path.join(parent, 'buc-home');
+      if (o.bucHome) fs.cpSync(o.bucHome, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
+    }
     const prompt = read(c, 'prompt.txt');
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
     const runs = [];
     let interventions = 0;
     if (fs.existsSync(path.join(CASES_DIR, c, 'correction.txt'))) {
-      runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin / 3, cwd: dir }));
-      runs.push(headless(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir }));
+      runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin / 3, cwd: dir, env }));
+      runs.push(headless(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env }));
       interventions = 1;
     } else {
-      runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir }));
+      runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env }));
     }
     const last = runs[runs.length - 1];
     if (typeof last.result === 'string' && last.result.trim().endsWith('?')) interventions += 1;
@@ -162,10 +178,10 @@ function table(rows) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   }
-  const out = ['| case | arm | n | pass rate | mean cost USD | mean tokens | mean elapsed s | mean subagents | mean interventions |', '|---|---|---|---|---|---|---|---|---|'];
+  const out = ['| case | arm | n | pass rate | mean cost USD | mean tokens | mean elapsed s | mean turns | mean subagents | mean interventions |', '|---|---|---|---|---|---|---|---|---|---|'];
   for (const [k, g] of groups) {
     const [c, arm] = k.split('|');
-    out.push(`| ${c} | ${arm} | ${g.length} | ${fmt(100 * g.filter((r) => r.accept_pass).length / g.length)}% | ${fmt(mean(g.map((r) => r.total_cost_usd)), 3)} | ${fmt(mean(g.map((r) => r.tokens.input + r.tokens.output)))} | ${fmt(mean(g.map((r) => r.elapsed_ms / 1000)), 1)} | ${fmt(mean(g.map((r) => r.subagents)), 1)} | ${fmt(mean(g.map((r) => r.interventions)), 1)} |`);
+    out.push(`| ${c} | ${arm} | ${g.length} | ${fmt(100 * g.filter((r) => r.accept_pass).length / g.length)}% | ${fmt(mean(g.map((r) => r.total_cost_usd)), 3)} | ${fmt(mean(g.map((r) => r.tokens.input + r.tokens.output)))} | ${fmt(mean(g.map((r) => r.elapsed_ms / 1000)), 1)} | ${fmt(mean(g.map((r) => r.num_turns)), 1)} | ${fmt(mean(g.map((r) => r.subagents)), 1)} | ${fmt(mean(g.map((r) => r.interventions)), 1)} |`);
   }
   return out.join('\n');
 }
@@ -183,7 +199,7 @@ function main(argv) {
   }
   const arms = f.arms.split(',');
   for (const a of arms) if (!ARMS[a]) throw new Error(`unknown arm: ${a}`);
-  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']) };
+  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']) };
   const rows = [];
   for (const c of cases) for (const arm of arms) for (let rep = 1; rep <= parseInt(f.n, 10); rep++) {
     console.error(`run ${c} ${arm} #${rep}`);
