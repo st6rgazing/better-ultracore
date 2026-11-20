@@ -205,7 +205,7 @@ function table(rows) {
 
 function main(argv) {
   const f = parseArgs(argv);
-  const all = fs.readdirSync(CASES_DIR).filter((c) => fs.existsSync(path.join(caseDir(c), 'setup.sh'))).sort();
+  const all = [...caseDirs.keys()].sort();
   const cases = f.cases ? f.cases.split(',') : all;
   for (const c of cases) if (!all.includes(c)) throw new Error(`unknown case: ${c}`);
   if (f.dry) {
