@@ -52,9 +52,14 @@ const commands = {
   },
   // buc scan-diff: secret scan of `git diff HEAD` plus untracked files. Prints rule/file/line only; exit 1 on findings.
   'scan-diff'() {
+    // Untracked secret-store files (.env, keys) are expected to hold secrets: warn so they get ignored, don't fail.
+    const STORE = /(^|\/)\.env(\.[\w-]+)?$|\.(pem|key)$/;
     const findings = require('../lib/preflight/secrets').scanWorkingTree(process.cwd());
-    for (const f of findings) console.log(`${f.rule} ${f.file}:${f.line}`);
-    return findings.length ? 1 : 0;
+    const warn = findings.filter((f) => f.untracked && STORE.test(f.file));
+    const fail = findings.filter((f) => !warn.includes(f));
+    for (const f of fail) console.log(`${f.rule} ${f.file}:${f.line}`);
+    for (const file of new Set(warn.map((f) => f.file))) console.log(`warn ${file}: untracked secret file, not in .gitignore; add it to .gitignore, do not open or commit it`);
+    return fail.length ? 1 : 0;
   },
   // Wall clock enforced here: SIGTERM at the timeout, SIGKILL after a grace period.
   'run-headless'(argv) {
