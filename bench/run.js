@@ -133,10 +133,15 @@ function patchOf(dir, preUntracked = []) {
 }
 
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
-function writeClaudeMd(dir) {
-  const rules = JSON.parse(fs.readFileSync(RULES, 'utf8'));
-  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), `# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
-  fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'CLAUDE.md\n');
+// Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
+function writeClaudeMd(dir, bucHome) {
+  const src = bucHome && fs.existsSync(path.join(bucHome, 'rules.json')) ? path.join(bucHome, 'rules.json') : RULES;
+  const rules = JSON.parse(fs.readFileSync(src, 'utf8'));
+  const file = path.join(dir, 'CLAUDE.md');
+  const tracked = spawnSync('git', ['-C', dir, 'ls-files', '--error-unmatch', 'CLAUDE.md']).status === 0;
+  fs.appendFileSync(file, `\n# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
+  if (tracked) spawnSync('git', ['-C', dir, 'update-index', '--assume-unchanged', 'CLAUDE.md']);
+  else fs.appendFileSync(path.join(dir, '.git', 'info', 'exclude'), 'CLAUDE.md\n');
 }
 
 function liveRun(c, arm, rep, o) {
@@ -145,7 +150,7 @@ function liveRun(c, arm, rep, o) {
   try {
     const s = sh(path.join(caseDir(c), 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
-    if (ARMS[arm].claudeMd) writeClaudeMd(dir);
+    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
     const env = { ...process.env };
     if (ARMS[arm].bucHome) {
