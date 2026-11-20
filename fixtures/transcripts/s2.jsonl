@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"s2","message":{"role":"user","content":"Please keep code snippets minimal."}}
+{"type":"user","sessionId":"s2","message":{"role":"user","content":"Please look at main before reviewing."}}
+{"type":"user","sessionId":"s2","message":{"role":"user","content":"thanks, looks good"}}
