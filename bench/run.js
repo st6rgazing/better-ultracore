@@ -154,27 +154,40 @@ function liveRun(c, arm, rep, o) {
     }
     const prompt = read(c, 'prompt.txt');
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
+    const call = (p, extra = {}) => claudeCall(p, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env, ...extra });
     const runs = [];
-    let interventions = 0;
+    let corrections = 0;
     if (has(c, 'correction.txt')) {
-      runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin / 3, cwd: dir, env }));
-      runs.push(headless(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env }));
-      interventions = 1;
+      runs.push(call(prompt, { timeoutMin: o.timeoutMin / 3 }));
+      runs.push(call(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`));
+      corrections = 1;
     } else {
-      runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env }));
+      runs.push(call(prompt));
     }
+    // Final reply lands outside the repo so read-only cases can be accepted on what was said.
+    const accept = () => {
+      const last = runs[runs.length - 1];
+      fs.writeFileSync(path.join(parent, 'result.txt'), typeof last.result === 'string' ? last.result : '');
+      return sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
+    };
+    const sid = () => [...runs].reverse().map((r) => r.session_id).find(Boolean);
+    const sim = simulate({
+      first: runs[runs.length - 1],
+      accept,
+      followup: has(c, 'followup.txt') ? read(c, 'followup.txt') : null,
+      resume: (reply) => { const r = call(reply, { resume: sid() }); runs.push(r); return r; },
+    });
+    const interventions = corrections + sim.interventions;
     const last = runs[runs.length - 1];
-    // A run that stops to ask the user (a question near the end, or an explicit "which do you mean") needs a human.
-    if (typeof last.result === 'string' && (/\?\s*$/.test(last.result.trim()) || /\b(which (of these|one) do you (mean|want)|do you want me to|should i)\b[^.]*\?/i.test(last.result))) interventions += 1;
     const sum = (f) => runs.reduce((n, r) => n + (f(r) || 0), 0);
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
-    // Final reply lands outside the repo so read-only cases can be accepted on what was said.
-    fs.writeFileSync(path.join(parent, 'result.txt'), typeof last.result === 'string' ? last.result : '');
-    const accept = sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
     const diff = patchOf(dir, preUntracked);
     return {
       case: c, arm, rep,
-      accept_pass: accept,
+      accept_pass: sim.final_pass,
+      first_try_pass: sim.first_try_pass && !corrections,
+      final_pass: sim.final_pass,
+      ultra_active: arm === 'ultra' ? ultraActive(dir) : null,
       transcript_tokens: transcriptTokens(dir),
       files_changed: diff.stat.map((x) => x.file),
       lines_changed: diff.stat.reduce((n, x) => n + x.added + x.deleted, 0),
@@ -183,6 +196,7 @@ function liveRun(c, arm, rep, o) {
       elapsed_ms: sum((r) => r.elapsed_ms),
       total_cost_usd: sum((r) => r.total_cost_usd),
       tokens: { input: tok.reduce((n, t) => n + t.input, 0), output: tok.reduce((n, t) => n + t.output, 0) },
+      tokens_to_accept: tok.reduce((n, t) => n + t.input + t.output, 0),
       num_turns: sum((r) => r.num_turns),
       subagents: sum((r) => r.subagent_stats && r.subagent_stats.spawned),
       interventions,
