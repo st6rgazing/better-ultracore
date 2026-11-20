@@ -39,3 +39,25 @@ test('leak repo fails secrets check without printing values', () => {
   assert.ok(!everything.includes(FAKE_GH));
   assert.ok(!everything.includes('FAKEFAKE'));
 });
+
+function cleanRepo(extra = {}) {
+  const d = tmp();
+  const git = (...a) => execFileSync('git', a, { cwd: d });
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(d, 'dist'));
+  fs.writeFileSync(path.join(d, 'dist/app.js'), 'console.log(1);\n');
+  fs.writeFileSync(path.join(d, 'app.js'), 'console.log(1);\n');
+  git('add', '.');
+  git('commit', '-qm', 'init');
+  fs.writeFileSync(path.join(d, 'buc.preflight.json'), JSON.stringify({ required: { build: false, browser: false }, ...extra }));
+  return d;
+}
+
+test('clean repo passes', () => {
+  const d = cleanRepo();
+  const r = buc(d, SKIP);
+  assert.strictEqual(r.status, 0);
+  assert.strictEqual(checkOf(d, 'secrets').status, 'passed');
+});
