@@ -1,7 +1,8 @@
 'use strict';
 // UserPromptSubmit: inject matched rules, a stale-ref note and the check command. Offline, no model call.
 const { execFileSync } = require('node:child_process');
-const { checkCmd, mentionedRef } = require('../lib/context');
+const { mentionedRef } = require('../lib/context');
+const { configuredCmd } = require('../lib/rules/check');
 const { retrieve } = require('../lib/rules/retrieve');
 const store = require('../lib/rules/store');
 
@@ -24,7 +25,7 @@ function run(input) {
   const parts = [block];
   if (root) {
     parts.push(staleLine(root.trim(), prompt));
-    const cmd = checkCmd(root.trim(), prompt);
+    const cmd = configuredCmd(root.trim());
     if (cmd && matched.length) parts.push(`Check command: ${cmd}`);
     const checked = matched.filter((r) => r.check.cmd);
     if (sessionId && checked.length) {

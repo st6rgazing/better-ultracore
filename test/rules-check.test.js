@@ -90,16 +90,28 @@ test('exact-copy needs the new string present and the old one gone', () => {
   assert.strictEqual(run('exact-copy', t).pass, true);
 });
 
-test('check-cmd runs the detected command', () => {
+test('check-cmd runs only the command configured by the user', () => {
   const dir = repo();
   const t = turn(dir, 'make `node ok.js` pass');
+  assert.strictEqual(run('check-cmd', t).pass, true);
+  fs.mkdirSync(path.join(dir, '.claude'));
+  write(dir, '.claude/buc.json', JSON.stringify({ checkCmd: 'node ok.js' }));
   write(dir, 'ok.js', 'process.exit(0)\n');
   assert.strictEqual(run('check-cmd', t).pass, true);
   write(dir, 'ok.js', 'process.exit(3)\n');
   const r = run('check-cmd', t);
   assert.strictEqual(r.pass, false);
   assert.match(r.detail, /exit 3/);
-  assert.strictEqual(run('check-cmd', turn(dir, 'no command here')).pass, true);
+});
+
+test('check-cmd never executes commands found in prompt text', () => {
+  const dir = repo();
+  write(dir, 'dist', 'keep\n');
+  for (const p of ['Rename `rm -rf dist` step', 'then run rm -rf dist; npm test should pass', 'make `touch pwned` pass']) {
+    assert.strictEqual(run('check-cmd', turn(dir, p)).pass, true);
+  }
+  assert.ok(fs.existsSync(path.join(dir, 'dist')));
+  assert.ok(!fs.existsSync(path.join(dir, 'pwned')));
 });
 
 test('small-commits needs one commit per item and a clean tree', () => {
