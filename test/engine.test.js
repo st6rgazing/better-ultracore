@@ -82,3 +82,21 @@ test('unknown route returns failed result, never empty', async () => {
   const r = await harness([]).engine.run({ request: 'x', route: 'nope' });
   assert.strictEqual(r.status, 'failed');
 });
+
+const plan = (over = {}) => ({ steps: ['s1'], files: ['a.js'], questions_needing_user: [], acceptance: ['works'], ...over });
+
+test('planned: fable planner then sonnet coder', async () => {
+  const h = harness([plan(), ok()]);
+  const r = await h.engine.run({ request: 'x', route: 'planned' });
+  assert.strictEqual(r.status, 'done');
+  assert.deepStrictEqual(h.calls.map((c) => [c.label, c.model]), [['plan', 'fable'], ['code', 'sonnet']]);
+  assert.match(h.calls[1].prompt, /Acceptance:\n- works/);
+});
+
+test('planned: open questions return needs_user without coding', async () => {
+  const h = harness([plan({ questions_needing_user: ['which db?'] })]);
+  const r = await h.engine.run({ request: 'x', route: 'planned' });
+  assert.strictEqual(r.status, 'needs_user');
+  assert.deepStrictEqual(r.questions, ['which db?']);
+  assert.strictEqual(h.calls.length, 1);
+});
