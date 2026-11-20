@@ -11,7 +11,7 @@ Short. Each finding names what it changed in the implementation.
 | anthropics/claude-code#106080 | Users want auto mode that decides per prompt whether to fan out and says why. | Open (feature request) | `route=<x>: <reason>` line on every run. |
 | Reddit r/ClaudeAI 1uphv78, 1tquz3d | Could not fetch (Reddit blocks automated fetch). Duplicated exploration and stalled workers are treated as leads covered by the issues above. | Unverified | None directly. |
 | Ultracode discussion (attached) | Not available in this session. | — | None. |
-| "Independent review caught bugs" | No sampled issue says this. Kept as one targeted verifier on high-risk routes only, given original request + exact diff + fresh check output. | Unverified | Verifier only on `guarded` route; its launch reserved first. |
+| "Independent review caught bugs" | No sampled issue says this. Kept as one targeted verifier on high-risk routes only, given original request + exact diff + fresh check output. | Unverified | v2: no automatic verifier. Risky edits get an injected edge-input probe instead; `/buc deep` adds an optional critic. |
 
 ## Platform facts verified on Claude Code 2.1.322
 - Plugins ship `workflows/*.js`, run as `/<plugin>:<meta.name>`. Scripts have no fs and no clock (`Date.now` throws) → elapsed limit is advisory in-workflow, enforced only by `bin/buc run-headless` wrapper.
