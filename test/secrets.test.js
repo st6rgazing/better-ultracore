@@ -74,3 +74,24 @@ test('secrets: default fingerprint salt is per-repo, so same value differs acros
   assert.notStrictEqual(a, b);
   assert.notStrictEqual(a, secrets.fingerprint(key, ''));
 });
+
+test('preflight secret scan of a subdirectory app ignores the rest of the repo', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const { scanDiff, scanCommits } = require('../lib/preflight/secrets');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-sub-'));
+  const sh = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir });
+  sh('init', '-q', '-b', 'main');
+  fs.mkdirSync(path.join(dir, 'app'));
+  fs.writeFileSync(path.join(dir, 'app', 'a.js'), 'x\n');
+  sh('add', '.'); sh('commit', '-qm', 'init');
+  const key = ['sk_', 'live_', 'A1b2C3d4E5f6G7h8'].join('');
+  fs.writeFileSync(path.join(dir, 'other.js'), `const k = '${key}';\n`);
+  sh('add', '.'); sh('commit', '-qm', 'outside app');
+  const app = path.join(dir, 'app');
+  assert.strictEqual(scanDiff(app, 'HEAD~1', 'HEAD', 's').length, 0);
+  assert.strictEqual(scanCommits(app, 'HEAD~1', 'HEAD', 's').length, 0);
+  assert.ok(scanDiff(dir, 'HEAD~1', 'HEAD', 's').length > 0);
+});
