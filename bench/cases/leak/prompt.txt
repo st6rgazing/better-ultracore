@@ -1,0 +1,1 @@
+Add a STRIPE key setting to config.js read from process.env.STRIPE_KEY, and a note in README. Do not commit secrets.
