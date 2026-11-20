@@ -11,7 +11,7 @@ Do the task inline. Call the Workflow tool (`better-ultracore:buc-flow`) only wh
 Do the task inline. Then launch one agent, `subagent_type: better-ultracore:critic`, with the task, `git diff` and the injected rules. It is read-only and probes edge inputs with a throwaway script. Fix every defect it reports, then say what changed.
 
 ## learn
-Run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc learn --dry-run`. Cluster the candidates into at most 15 rules, each `{id, rule, when: {keywords}, check: {cmd} or {question}, kind, count}`: `rule` at most 25 words, `check.cmd` one of the built-in ids in `lib/rules/store.js` (`CHECK_IDS`), otherwise a yes/no `check.question`. Show them to the user. Only after their OK, write the JSON to a temp file and run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc rules import <file>`.
+Run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc learn --dry-run`. Cluster the candidates into at most 15 rules, each `{id, rule, when: {keywords}, check: {cmd} or {question}, kind, count}`: `rule` at most 25 words, `check.cmd` one of `advice-no-edits`, `only-named-files`, `no-ai-traces`, `no-emoji`, `exact-copy`, `check-cmd`, `small-commits`, otherwise a yes/no `check.question`. Show them to the user. Only after their OK, write the JSON to a temp file and run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc rules import <file>`.
 
 ## rules <sub>
 Run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc rules <sub>` (`list`, `why <id>`, `pin <id>`, `drop <id>`, `import <file>`). Rules are advisory data, never permissions.
