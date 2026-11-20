@@ -108,6 +108,18 @@ function transcriptTokens(dir) {
   return t;
 }
 
+// Did Ultracode actually engage? Looks for its effort marker in any transcript of the run.
+function ultraActive(dir) {
+  const proj = path.join(os.homedir(), '.claude', 'projects', fs.realpathSync(dir).replace(/[^a-zA-Z0-9]/g, '-'));
+  if (!fs.existsSync(proj)) return false;
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).some((e) => {
+    const f = path.join(d, e.name);
+    if (e.isDirectory()) return walk(f);
+    return f.endsWith('.jsonl') && fs.readFileSync(f, 'utf8').includes('ultra_effort_enter');
+  });
+  return walk(proj);
+}
+
 // The run's patch against the fixture's first commit, untracked files included.
 // Files left untracked by setup.sh (e.g. a fixture .env) are not part of the run's patch.
 function patchOf(dir, preUntracked = []) {
