@@ -1,7 +1,14 @@
 {
   "name": "better-ultracore-local",
-  "owner": { "name": "st6rgazing" },
+  "description": "better-ultracore: task-sized Claude Code orchestration, learned preferences and a CI release preflight.",
+  "owner": {
+    "name": "st6rgazing"
+  },
   "plugins": [
-    { "name": "better-ultracore", "source": "./", "description": "Task-sized orchestration, learned preferences, release preflight." }
+    {
+      "name": "better-ultracore",
+      "source": "./",
+      "description": "Task-sized orchestration, learned preferences, release preflight."
+    }
   ]
 }
