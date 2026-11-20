@@ -83,10 +83,12 @@ function transcriptTokens(dir) {
 }
 
 // The run's patch against the fixture's first commit, untracked files included.
-function patchOf(dir) {
+// Files left untracked by setup.sh (e.g. a fixture .env) are not part of the run's patch.
+function patchOf(dir, preUntracked = []) {
   const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '';
   const root = git('rev-list', '--max-parents=0', 'HEAD').trim().split('\n')[0];
-  git('add', '-N', '.');
+  const fresh = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter((f) => f && !preUntracked.includes(f));
+  if (fresh.length) git('add', '-N', '--', ...fresh);
   const stat = git('diff', '--numstat', root).trim().split('\n').filter(Boolean)
     .map((l) => { const [a, d, f] = l.split('\t'); return { file: f, added: +a || 0, deleted: +d || 0 }; });
   return { root, stat, patch: git('diff', root).slice(0, 20000) };
@@ -99,6 +101,7 @@ function liveRun(c, arm, rep, o) {
     const s = sh(path.join(CASES_DIR, c, 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
     const prompt = read(c, 'prompt.txt');
+    const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
     const runs = [];
     let interventions = 0;
     if (fs.existsSync(path.join(CASES_DIR, c, 'correction.txt'))) {
@@ -113,7 +116,7 @@ function liveRun(c, arm, rep, o) {
     const sum = (f) => runs.reduce((n, r) => n + (f(r) || 0), 0);
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
     const accept = sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status === 0;
-    const diff = patchOf(dir);
+    const diff = patchOf(dir, preUntracked);
     return {
       case: c, arm, rep,
       accept_pass: accept,
