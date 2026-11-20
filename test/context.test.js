@@ -89,6 +89,19 @@ test('context: stale regression for "look at main", workflow-arg shape', () => {
   assert.ok(Array.isArray(c.prefs));
 });
 
+test('context: blocker prefs are split from advisory prefs; deadline is computed', () => {
+  const f = fixture();
+  const root = fs.realpathSync(f.a);
+  const base = { correction: 'zebra rule', source: {}, scope: 'global', trigger: { keywords: ['zebra'], paths: [] }, kind: 'check', sessions: ['s'] };
+  const store = require('../lib/prefs/store');
+  store.save({ ...base, id: 'adv', status: 'confirmed', check: null }, root);
+  store.save({ ...base, id: 'blk', status: 'blocker', check: 'run the zebra check' }, root);
+  const c = ctx.context('fix the zebra in router.js', { cwd: f.a, offline: true });
+  assert.deepStrictEqual(c.prefs, ['adv: zebra rule']);
+  assert.deepStrictEqual(c.blockers, ['blk: run the zebra check']);
+  assert.strictEqual(c.deadlineMs - c.startedAtMs, 30 * 60000);
+});
+
 test('context: no ref mention gives ref null', () => {
   const f = fixture();
   assert.strictEqual(ctx.context('fix typo in router.js', { cwd: f.a, offline: true }).ref, null);

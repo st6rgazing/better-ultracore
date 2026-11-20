@@ -176,6 +176,14 @@ test('parallel: a worker writing outside its assigned files fails its item', asy
   assert.match(r.reason, /wrote outside assigned files: a/);
 });
 
+test('blockers are listed as required checks in briefs and echoed in the result', async () => {
+  const h = harness([ok()]);
+  const r = await h.engine.run({ request: 'x', route: 'small', prefs: ['p1: be nice'], blockers: ['b1: run git ls-remote origin main'] });
+  assert.match(h.calls[0].prompt, /Required checks \(must pass before done\):\n- b1: run git ls-remote origin main/);
+  assert.ok(!/Required checks[^]*p1: be nice/.test(h.calls[0].prompt.split('Preferences')[0]));
+  assert.deepStrictEqual(r.blockers, ['b1: run git ls-remote origin main']);
+});
+
 test('agent throwing (budget exhausted) yields partial with completed steps kept', async () => {
   const h = harness([bad('e1'), () => { throw new Error('budget exhausted'); }]);
   const r = await h.engine.run({ request: 'x', route: 'small' });
