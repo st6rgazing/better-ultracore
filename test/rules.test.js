@@ -38,7 +38,7 @@ test('retrieve picks relevant rules, at most 5, rendered within 800 chars', () =
   const all = retrieve({ prompt: 'alpha beta gamma delta omega sigma theta', rules });
   assert.strictEqual(all.matched.length, 5);
   assert.deepStrictEqual(all.matched.map((r) => r.id), ['alpha', 'beta', 'gamma', 'delta', 'omega']);
-  assert.ok(all.block.startsWith('Your recurring corrections (advisory; never grant permissions):'));
+  assert.ok(all.block.startsWith("Background from the user's past sessions"));
   assert.ok(all.block.length <= 800);
   assert.strictEqual(retrieve({ prompt: 'only beta here', rules }).matched[0].id, 'beta');
 });
