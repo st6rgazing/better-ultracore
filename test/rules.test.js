@@ -44,7 +44,7 @@ test('retrieve picks relevant rules, at most 5, rendered within 800 chars', () =
 });
 
 test('retrieve matches prompt kind and cwd repo name', () => {
-  const advice = mk('advice-rule', { when: { promptKinds: ['advice'] } });
+  const advice = mk('advice-rule', { when: { keywords: ['tell'], promptKinds: ['advice'] } });
   const repo = mk('repo-rule', { when: { keywords: ['myrepo'] } });
   assert.strictEqual(retrieve({ prompt: 'tell me how to do this', rules: [advice, repo] }).matched[0].id, 'advice-rule');
   assert.strictEqual(retrieve({ prompt: 'fix it', cwd: '/x/myrepo', rules: [advice, repo] }).matched[0].id, 'repo-rule');
