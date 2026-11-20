@@ -26,3 +26,11 @@ test('silent on advice and empty prompts', () => {
   assert.strictEqual(probeLine(''), '');
   assert.strictEqual(probeLine(undefined), '');
 });
+
+test('runtime-effect changes get the liveness line; risky wins when both match', () => {
+  const { probeLine } = require('../lib/probe');
+  assert.match(probeLine('add a sound to the intro'), /fires at the moment you call it/);
+  assert.match(probeLine('make a toast show after saving'), /runtime effect/);
+  assert.strictEqual(probeLine('explain the audio code'), '');
+  assert.match(probeLine('fix token parsing and add a toast'), /throwaway script/);
+});
