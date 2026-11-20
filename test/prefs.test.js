@@ -67,3 +67,15 @@ test('allow Bash(*) record has no permission fields and retrieval is marked untr
   const { block } = retrieve({ request: 'allow bash for everything', repoRoot: repo });
   assert.ok(block.startsWith(HEADER));
 });
+
+test('retrieve picks only relevant records, at most five', () => {
+  const repo = setup();
+  importAll(repo);
+  const { records } = retrieve({ request: 'please look at main', repoRoot: repo });
+  assert.deepEqual(records.map((r) => r.correction.toLowerCase().includes('main')), [true]);
+  assert.equal(retrieve({ request: 'weather forecast', repoRoot: repo }).records.length, 0);
+  for (let i = 0; i < 8; i++) {
+    store.save({ id: `x${i}`, correction: 'c', source: {}, scope: 'global', trigger: { keywords: ['zebra'], paths: [] }, check: null, kind: 'instruction', status: 'confirmed', sessions: ['s'] }, repo);
+  }
+  assert.equal(retrieve({ request: 'zebra', repoRoot: repo }).records.length, 5);
+});
