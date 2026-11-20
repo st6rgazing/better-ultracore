@@ -7,18 +7,18 @@ Compares four arms on small synthetic repos:
 | `plain` | `--no-plugin`, prompt as written |
 | `plain-claudemd` | `--no-plugin`, prompt as written; `CLAUDE.md` with the rules from `fixtures/rules.json` as plain bullets is written into the run repo (git-excluded, so not in the patch) |
 | `buc` | `--plugin-dir <repo>`, prompt as written (hooks do the work); gets its own copy of `--buc-home` as `BUC_HOME` |
-| `ultra` | `--no-plugin`, prompt = `ultracode <prompt>`, budget = 2x `--budget` |
+| `ultra` | stock Ultracode: `--no-plugin`, prompt unchanged, `--settings '{"ultracode":true,"workflowSizeGuideline":"small"}' --effort xhigh`, budget = 2x `--budget`; `ultra_active` records whether `ultra_effort_enter` appears in the run's transcripts |
 
 ## Run
 
-Live (spends real money, calls `claude` through `bin/buc run-headless`):
+Live (spends real money, spawns `claude` directly; `BUC_CLAUDE_BIN` overrides the binary):
 
     node bench/run.js --arms plain,buc,ultra --cases trivial,ambiguous --n 1 --budget 1 --timeout-min 10 --out bench/results/my-label.json
 
 `--buc-home <dir>` seeds each buc run with a fresh copy of that rules dir (e.g. one containing `rules.json` copied from `bench/fixtures/`); without it the buc arm starts with an empty `BUC_HOME`. All flags are optional (defaults: all arms, all cases, `--n 1 --budget 1 --timeout-min 10`, output under `bench/results/<timestamp>.json`).
 Prints a markdown table per case x arm and writes the raw per-run JSON.
 
-No-model check (setup + accept must fail, solve + accept must pass):
+`--cases` accepts names from `bench/cases` and `bench/private` (gitignored, may be absent). No-model check, listing the four arms and every case (setup + accept must fail, solve + accept must pass; cases without `solve.sh` are skipped for the solve half):
 
     node bench/run.js --dry
 
@@ -46,20 +46,32 @@ Each case dir has `setup.sh <dir>`, `prompt.txt`, `accept.sh <dir>` (exit 0 = pa
 
 `correction` runs the first prompt with `timeout/3` (simulated interruption), then a second fresh invocation in the same dir with `correction.txt + "\nOriginal task: " + prompt`. Metrics are summed over both; `interventions` starts at 1.
 
+## Simulated user
+
+After the run (`bench/sim-user.js`, deterministic, no model; accept output is never shown to the model):
+
+1. `accept.sh` passes: 0 interventions.
+2. Otherwise resume the same session (`claude -p --resume <session_id>`). If the last reply ends in a question the reply is "use your best reading of what I asked"; else round 1 sends the case's `followup.txt` (fallback "no, read what i asked again") and round 2 sends "no, read what i asked again". Each reply counts 1 intervention; accept is re-run after each.
+3. At most 2 rounds.
+
+Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (all rounds), `num_turns`.
+
 ## Metrics
 
 - `accept_pass`: `accept.sh` exit 0 after the run; independent of model wording.
 - `total_cost_usd`: summed over invocations, as reported by claude.
 - `tokens.input`: input + cache read + cache creation, summed over `model_usage`; `tokens.output`: output tokens.
 - `num_turns`, `subagents` (`subagent_stats.spawned`), `elapsed_ms` (wall clock), `exit`, `timed_out` (of the last invocation).
-- `interventions`: 1 for `correction`, plus 1 if the final result text ends with `?` (heuristic for "agent asked the user").
+- `interventions`: 1 for `correction`, plus one per simulated-user reply (see above).
+- `first_try_pass` (always false for `correction`), `final_pass` (= `accept_pass`), `tokens_to_accept`, `ultra_active` (ultra arm only).
 - `source`: always `live`.
 
 ## Caveats
 
 - Small N: use `--n 3` or more before drawing conclusions; one run per cell is anecdote.
-- Live runs cost real money; `ultra` gets 2x budget. Budget caps can truncate a run, which shows as failure.
+- Live runs cost real money; `ultra` gets 2x budget; each resume round gets a fresh budget. Budget caps can truncate a run, which shows as failure.
 - Model output is nondeterministic; fixtures and acceptance checks are deterministic.
-- The `?` interventions heuristic misses questions not at the end and flags rhetorical ones.
+- The question heuristic only sees a `?` at the very end of the final reply.
+- `patch` and `files_changed` are taken after all rounds.
 - `ambiguous` accepts either `done <index>` CLI or exported `done(i)`, using the index as displayed by `list`.
 - `stale-branch` creates `<dir>-origin.git` beside the run dir (inside the per-run temp dir); no network is used.
