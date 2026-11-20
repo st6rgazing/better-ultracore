@@ -89,6 +89,32 @@ test('context: stale regression for "look at main", workflow-arg shape', () => {
   assert.ok(Array.isArray(c.prefs));
 });
 
+test('context: stale ref is fetched read-only; read_from, remote_sha and conflict_files', () => {
+  const f = fixture();
+  fs.writeFileSync(path.join(f.b, 'router.js'), '2');
+  fs.writeFileSync(path.join(f.b, 'VERSION'), '9.9\n');
+  sh(f.b, 'add', '.');
+  sh(f.b, 'commit', '-qm', 'advance');
+  sh(f.b, 'push', '-q', 'origin', 'main');
+  const remote = sh(f.b, 'rev-parse', 'HEAD');
+  const before = sh(f.a, 'rev-parse', 'HEAD');
+  const c = ctx.context('look at main and fix router.js typo', { cwd: f.a });
+  assert.strictEqual(c.ref.read_from, 'origin/main');
+  assert.strictEqual(c.ref.remote_sha, remote);
+  assert.deepStrictEqual(c.ref.conflict_files, ['router.js']);
+  assert.strictEqual(sh(f.a, 'show', `${c.ref.read_from}:VERSION`), '9.9');
+  assert.strictEqual(sh(f.a, 'rev-parse', 'HEAD'), before);
+  assert.strictEqual(sh(f.a, 'rev-parse', 'refs/heads/main'), before);
+  assert.strictEqual(fs.existsSync(path.join(f.a, 'VERSION')), false);
+  assert.strictEqual(sh(f.a, 'status', '--porcelain'), '');
+});
+
+test('context: offline stale check never fetches', () => {
+  const f = fixture();
+  const c = ctx.context('look at main', { cwd: f.a, offline: true });
+  assert.strictEqual(c.ref.read_from, undefined);
+});
+
 test('context: blocker prefs are split from advisory prefs; deadline is computed', () => {
   const f = fixture();
   const root = fs.realpathSync(f.a);
