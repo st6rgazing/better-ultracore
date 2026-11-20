@@ -67,3 +67,9 @@ test('mentionedRef finds an existing branch only', () => {
   assert.strictEqual(ctx.mentionedRef(f.a, 'please look at main and fix it'), 'main');
   assert.strictEqual(ctx.mentionedRef(f.a, 'do it on the server'), null);
 });
+
+test('relevantFiles ranks by path words and caps the list', () => {
+  const f = fixture();
+  assert.deepStrictEqual(ctx.relevantFiles(f.a, 'fix the router bug'), ['router.js']);
+  assert.deepStrictEqual(ctx.relevantFiles(f.a, 'zzz'), []);
+});
