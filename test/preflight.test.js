@@ -72,3 +72,16 @@ test('missing ownership test is unverified and fails when required', () => {
   assert.strictEqual(buc(d, SKIP).status, 0);
   assert.strictEqual(checkOf(d, 'asvs-v4-access').status, 'passed');
 });
+
+test('promote verify mismatch fails, match passes', () => {
+  const d = tmp();
+  const artifact = path.join(d, 'dist.tgz');
+  fs.writeFileSync(artifact, 'one');
+  const base = ['promote', '--manifest', 'm.json', '--artifact', 'dist.tgz'];
+  assert.strictEqual(buc(d, [...base, '--sha', 'abc']).status, 0);
+  assert.strictEqual(buc(d, [...base, '--verify']).status, 0);
+  fs.writeFileSync(artifact, 'two');
+  const r = buc(d, [...base, '--verify']);
+  assert.strictEqual(r.status, 1);
+  assert.match(r.stdout, /failed/);
+});
