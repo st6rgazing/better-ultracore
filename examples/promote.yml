@@ -1,3 +1,4 @@
+# Copy bin/ and lib/ from better-ultracore into tools/buc, or vendor as a git submodule.
 # Example: build once, promote the exact same artifact.
 # Copy to .github/workflows/promote.yml and adapt the deploy step.
 #
@@ -34,7 +35,7 @@ jobs:
       - run: tar -czf dist.tgz dist
       - id: sum
         run: echo "sha256=$(sha256sum dist.tgz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - run: node bin/buc preflight promote --sha "$GITHUB_SHA" --artifact dist.tgz --manifest promote-manifest.json
+      - run: node tools/buc/bin/buc preflight promote --sha "$GITHUB_SHA" --artifact dist.tgz --manifest promote-manifest.json
       - uses: actions/upload-artifact@v4
         with:
           name: release
@@ -58,10 +59,10 @@ jobs:
       - name: Verify the artifact being promoted
         run: |
           test "$(sha256sum dist.tgz | cut -d' ' -f1)" = "${{ needs.build.outputs.sha256 }}"
-          node bin/buc preflight promote --verify --manifest promote-manifest.json --artifact dist.tgz
+          node tools/buc/bin/buc preflight promote --verify --manifest promote-manifest.json --artifact dist.tgz
 
       - name: Deploy
         run: echo "replace with your provider deploy of dist.tgz using OIDC credentials"
 
       - name: Verify what is live
-        run: node bin/buc preflight promote --verify --manifest promote-manifest.json --url "${{ vars.PROD_URL }}/__version"
+        run: node tools/buc/bin/buc preflight promote --verify --manifest promote-manifest.json --url "${{ vars.PROD_URL }}/__version"
