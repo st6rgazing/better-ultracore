@@ -61,3 +61,14 @@ test('clean repo passes', () => {
   assert.strictEqual(r.status, 0);
   assert.strictEqual(checkOf(d, 'secrets').status, 'passed');
 });
+
+test('missing ownership test is unverified and fails when required', () => {
+  const asvs = [{ id: 'asvs-v4-access', evaluator: 'perRecord', routes: [{ route: '/api/notes/:id', test: 'own.spec.js' }] }];
+  const d = cleanRepo({ asvs });
+  assert.strictEqual(buc(d, SKIP).status, 1);
+  assert.strictEqual(checkOf(d, 'asvs-v4-access').status, 'unverified');
+
+  fs.writeFileSync(path.join(d, 'own.spec.js'), "test('/api/notes/:id forbids other users', () => {});\n");
+  assert.strictEqual(buc(d, SKIP).status, 0);
+  assert.strictEqual(checkOf(d, 'asvs-v4-access').status, 'passed');
+});
