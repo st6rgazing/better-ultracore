@@ -17,3 +17,9 @@ Short. Each finding names what it changed in the implementation.
 - Plugins ship `workflows/*.js`, run as `/<plugin>:<meta.name>`. Scripts have no fs and no clock (`Date.now` throws) → elapsed limit is advisory in-workflow, enforced only by `bin/buc run-headless` wrapper.
 - Plugin subagents ignore `permissionMode`/`hooks`/`mcpServers` frontmatter; `tools` allowlist is honored → read-only reviewer has `tools: Read, Grep, Glob`.
 - `claude -p --output-format json` reports `total_cost_usd`, `usage`, `modelUsage`, `num_turns`, `subagent_stats`; `--max-budget-usd` is a documented hard cap.
+
+## What the benchmark changed
+- v1 buc cost 1.4-3x plain Claude because it spawned subagents that re-read context (the #92349 pattern itself). `small` and `inline-plan` now run inline.
+- Stale branch: buc detected staleness but stopped to ask. It now reads `origin/<ref>` read-only and continues.
+- Leak case routed `guarded` because of "Do not commit secrets". Prohibition clauses are now stripped before the risk test.
+- `scan-diff` flagged a pre-existing `.env`. It now warns and the command gitignores the file without opening it.
