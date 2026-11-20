@@ -102,6 +102,40 @@ test('guarded: planner, coder, verifier with agentType and git diff base', async
   assert.match(h.calls[2].prompt, /untracked/);
 });
 
+test('guarded with criteria skips the planner: coder and verifier only', async () => {
+  const h = harness([ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', hasCriteria: true });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(r.launches, 2);
+  assert.deepStrictEqual(h.calls.map((c) => c.agentType), ['better-ultracore:coder', 'better-ultracore:verifier']);
+});
+
+test('guarded with exactly one named file skips the planner', async () => {
+  const h = harness([ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1 });
+  assert.strictEqual(r.launches, 2);
+});
+
+test('guarded without criteria or a single file still plans', async () => {
+  const h = harness([plan(), ok(), vok()]);
+  const r = await h.engine.run({ request: 'x', route: 'guarded', hasCriteria: false, namedFiles: 0 });
+  assert.strictEqual(r.launches, 3);
+});
+
+test('inline-plan reaching the engine runs as small, no router', async () => {
+  const h = harness([ok()]);
+  const r = await h.engine.run({ request: 'x', route: 'inline-plan', confidence: 'high' });
+  assert.strictEqual(r.route, 'small');
+  assert.strictEqual(h.calls.length, 1);
+  assert.strictEqual(h.calls[0].agentType, 'better-ultracore:coder');
+});
+
+test('confident known route never calls the router', async () => {
+  const h = harness([ok()]);
+  await h.engine.run({ request: 'x', route: 'small', confidence: 'high' });
+  assert.ok(h.calls.every((c) => c.model !== 'haiku'));
+});
+
 test('guarded: verifier defects give partial', async () => {
   const r = await harness([plan(), ok(), vok({ defects: ['off by one'] })]).engine.run({ request: 'x', route: 'guarded' });
   assert.strictEqual(r.status, 'partial');
