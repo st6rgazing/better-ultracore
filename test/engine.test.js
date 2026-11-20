@@ -98,6 +98,8 @@ test('guarded: planner, coder, verifier with agentType and git diff base', async
   assert.strictEqual(r.status, 'done');
   assert.strictEqual(h.calls[2].agentType, 'better-ultracore:verifier');
   assert.match(h.calls[2].prompt, /git diff abc123/);
+  assert.match(h.calls[2].prompt, /git status --porcelain/);
+  assert.match(h.calls[2].prompt, /untracked/);
 });
 
 test('guarded: verifier defects give partial', async () => {
