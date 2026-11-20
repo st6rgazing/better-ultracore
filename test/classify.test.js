@@ -39,6 +39,12 @@ const table = [
   ['Change password hashing in auth.js from md5 to scrypt with a random salt; verifyPassword must still work. Acceptance: node test.js', 'guarded'],
   ['Add a retry to fetch.js. Do not commit secrets or tokens.', 'small'],
   ['fix the login auth bug. Never log passwords.', 'guarded'],
+  ['Look at main and tell me what changed in the auth module.', 'review'],
+  ['what does token refresh do in auth.js', 'review'],
+  ['how does login work?', 'review'],
+  ['explain the payment webhook flow', 'review'],
+  ['where is the session token stored', 'review'],
+  ['Look at main and write VERSION into answer.txt.', 'inline-plan'],
 ];
 
 for (const [req, route] of table) {
