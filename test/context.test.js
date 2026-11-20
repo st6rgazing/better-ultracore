@@ -132,3 +132,10 @@ test('run-headless kills on wall-clock timeout', () => {
   assert.strictEqual(r.timed_out, true);
   assert.ok(r.elapsed_ms < 10000);
 });
+
+test('checkCmd takes the command named in the request', () => {
+  const { checkCmd } = require('../lib/context');
+  assert.strictEqual(checkCmd('/nonexistent', 'Fix it. Acceptance: node test.js prints ok.'), 'node test.js');
+  assert.strictEqual(checkCmd('/nonexistent', 'Run `npm run e2e` after'), 'npm run e2e');
+  assert.strictEqual(checkCmd('/nonexistent', 'make it nicer'), '');
+});
