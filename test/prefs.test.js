@@ -48,3 +48,12 @@ test('same correction in two sessions becomes a suggested check', () => {
   assert.equal(rec.kind, 'check');
   assert.equal(rec.status, 'suggested');
 });
+
+test('forgotten record is tombstoned and never re-imported', () => {
+  const repo = setup();
+  const rec = byText(importAll(repo), /npm test/);
+  assert.ok(store.forget(rec.id, repo));
+  const again = importAll(repo);
+  assert.ok(!again.some((r) => r.id === rec.id));
+  assert.ok(!store.loadAll(repo).some((r) => r.id === rec.id));
+});
