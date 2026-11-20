@@ -4,292 +4,142 @@ const assert = require('node:assert');
 const { createEngine, DEFAULT_LIMITS } = require('../lib/engine');
 
 test('default limits', () => {
-  assert.deepStrictEqual(DEFAULT_LIMITS, { maxLaunches: 6, maxRepairs: 2, maxElapsedMin: 30 });
+  assert.deepStrictEqual(DEFAULT_LIMITS, { maxLaunches: 6, maxElapsedMin: 30 });
 });
 
 const ok = (files = ['a.js']) => ({ changed_files: files, diff_empty: false, check: { cmd: 'npm test', passed: true } });
 const bad = (err) => ({ changed_files: ['a.js'], diff_empty: false, check: { cmd: 'npm test', passed: false, first_error: err } });
+const item = (id, files) => ({ id, files, steps: [`do ${id}`] });
+const seq = (thunks) => Promise.all(thunks.map((t) => t()));
 
-function harness(answers) {
+function harness(answers, extra = {}) {
   const calls = [];
   const agent = async (prompt, o) => { calls.push({ prompt, ...o }); const a = answers.shift(); return typeof a === 'function' ? a(o) : a; };
-  return { calls, engine: createEngine({ agent, log() {} }) };
+  return { calls, engine: createEngine({ agent, parallel: seq, log() {}, ...extra }) };
 }
 
-test('small: coder then passing check is done', async () => {
-  const h = harness([ok()]);
-  const r = await h.engine.run({ request: 'x', route: 'small', files: ['a.js'] });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(r.launches, 1);
-  assert.strictEqual(h.calls[0].model, 'sonnet');
-  assert.strictEqual(h.calls[0].label, 'code');
-  assert.strictEqual(r.limits_report.length, 5);
-});
-
-test('stall retries once with :retry label, counted as launch', async () => {
-  const h = harness([null, ok()]);
-  const r = await h.engine.run({ request: 'x', route: 'small' });
-  assert.deepStrictEqual(h.calls.map((c) => c.label), ['code', 'code:retry']);
-  assert.strictEqual(r.launches, 2);
-  assert.strictEqual(r.status, 'done');
-});
-
-test('second stall returns partial', async () => {
-  const r = await harness([null, null]).engine.run({ request: 'x', route: 'small' });
-  assert.strictEqual(r.status, 'partial');
-  assert.strictEqual(r.launches, 2);
-});
-
-test('repair loop stops at maxRepairs', async () => {
-  const r = await harness([bad('alpha'), bad('beta'), bad('gamma')]).engine.run({ request: 'x', route: 'small' });
-  assert.strictEqual(r.repairs, 2);
-  assert.strictEqual(r.status, 'failed');
-  assert.match(r.reason, /maxRepairs/);
-});
-
-test('repair loop stops when failure signature repeats', async () => {
-  const r = await harness([bad('boom at a.js:1'), bad('boom at b.js:9')]).engine.run({ request: 'x', route: 'small' });
-  assert.strictEqual(r.repairs, 1);
-  assert.match(r.reason, /repeated/);
-});
-
-test('repair loop stops on empty diff', async () => {
-  const empty = { changed_files: [], diff_empty: true, check: { cmd: 'npm test', passed: false, first_error: 'x' } };
-  const r = await harness([empty]).engine.run({ request: 'x', route: 'small' });
-  assert.strictEqual(r.status, 'failed');
-  assert.strictEqual(r.launches, 1);
-});
-
-test('repair succeeds', async () => {
-  const r = await harness([bad('e1'), ok()]).engine.run({ request: 'x', route: 'small' });
-  assert.strictEqual(r.status, 'done');
-  assert.deepStrictEqual(r.completed_steps.map((s) => s.id), ['code', 'code:repair1']);
-});
-
-test('unknown route asks haiku; if every agent stalls the result is partial, never empty', async () => {
-  const r = await harness([]).engine.run({ request: 'x', route: 'nope' });
-  assert.strictEqual(r.status, 'partial');
-  assert.ok(r.limits_report.length);
-});
-
-const plan = (over = {}) => ({ steps: ['s1'], files: ['a.js'], questions_needing_user: [], acceptance: ['works'], ...over });
-
-test('planned: fable planner then sonnet coder', async () => {
-  const h = harness([plan(), ok()]);
-  const r = await h.engine.run({ request: 'x', route: 'planned' });
-  assert.strictEqual(r.status, 'done');
-  assert.deepStrictEqual(h.calls.map((c) => [c.label, c.model]), [['plan', 'fable'], ['code', 'sonnet']]);
-  assert.match(h.calls[1].prompt, /Acceptance:\n- works/);
-});
-
-test('planned: open questions return needs_user without coding', async () => {
-  const h = harness([plan({ questions_needing_user: ['which db?'] })]);
-  const r = await h.engine.run({ request: 'x', route: 'planned' });
-  assert.strictEqual(r.status, 'needs_user');
-  assert.deepStrictEqual(r.questions, ['which db?']);
-  assert.strictEqual(h.calls.length, 1);
-});
-
-const vok = (over = {}) => ({ ...ok(), defects: [], ...over });
-
-test('guarded: planner, coder, verifier with agentType and git diff base', async () => {
-  const h = harness([plan(), ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', base: 'abc123' });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(h.calls[2].agentType, 'better-ultracore:verifier');
-  assert.match(h.calls[2].prompt, /git diff abc123/);
-  assert.match(h.calls[2].prompt, /git status --porcelain/);
-  assert.match(h.calls[2].prompt, /untracked/);
-});
-
-test('guarded with criteria skips the planner: coder and verifier only', async () => {
-  const h = harness([ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', hasCriteria: true });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(r.launches, 2);
-  assert.deepStrictEqual(h.calls.map((c) => c.agentType), ['better-ultracore:coder', 'better-ultracore:verifier']);
-});
-
-test('guarded with exactly one named file skips the planner', async () => {
-  const h = harness([ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1 });
-  assert.strictEqual(r.launches, 2);
-});
-
-test('guarded without criteria or a single file still plans', async () => {
-  const h = harness([plan(), ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', hasCriteria: false, namedFiles: 0 });
-  assert.strictEqual(r.launches, 3);
-});
-
-test('inline-plan reaching the engine runs as small, no router', async () => {
-  const h = harness([ok()]);
-  const r = await h.engine.run({ request: 'x', route: 'inline-plan', confidence: 'high' });
-  assert.strictEqual(r.route, 'small');
-  assert.strictEqual(h.calls.length, 1);
-  assert.strictEqual(h.calls[0].agentType, 'better-ultracore:coder');
-});
-
-test('confident known route never calls the router', async () => {
-  const h = harness([ok()]);
-  await h.engine.run({ request: 'x', route: 'small', confidence: 'high' });
-  assert.ok(h.calls.every((c) => c.model !== 'haiku'));
-});
-
-test('guarded: persistent verifier defects give partial after one repair', async () => {
-  const h = harness([ok(), vok({ defects: ['off by one'] }), ok(), vok({ defects: ['still off'] })]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1 });
-  assert.strictEqual(r.status, 'partial');
-  assert.strictEqual(r.launches, 4);
-  assert.deepStrictEqual(r.defects, ['still off']);
-});
-
-test('guarded: defects, one repair with defect list, re-verify passes', async () => {
-  const h = harness([ok(), vok({ defects: ['empty hash verifies'] }), ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1 });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(r.launches, 4);
-  assert.strictEqual(r.repairs, 1);
-  assert.ok(h.calls[2].prompt.includes('empty hash verifies'));
-  assert.strictEqual(h.calls[2].agentType, 'better-ultracore:coder');
-  assert.ok(h.calls[1].prompt.includes('tmpdir'));
-});
-
-test('guarded: re-verify keeps its reserved slot', async () => {
-  const h = harness([ok(), vok({ defects: ['d'] }), ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', namedFiles: 1, limits: { maxLaunches: 4 } });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(r.launches, 4);
-});
-
-test('guarded: repairs denied before verifier slot is starved', async () => {
-  const h = harness([plan(), bad('alpha'), bad('beta'), bad('gamma'), bad('delta')]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', limits: { maxLaunches: 3 } });
-  assert.strictEqual(r.launches, 2);
-  assert.match(r.reason, /maxLaunches/);
-});
-
-test('guarded: verifier still runs when launches are otherwise used up', async () => {
-  const h = harness([plan(), ok(), vok()]);
-  const r = await h.engine.run({ request: 'x', route: 'guarded', limits: { maxLaunches: 3 } });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(r.launches, 3);
-});
-
-test('review: reviewer-ro only, no coder', async () => {
-  const h = harness([{ summary: 'fine', findings: [] }]);
-  const r = await h.engine.run({ request: 'review x', route: 'review' });
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(h.calls.length, 1);
-  assert.strictEqual(h.calls[0].agentType, 'better-ultracore:reviewer-ro');
-  assert.strictEqual(r.last_check, null);
-});
-
-test('brief carries request, base, delimited prefs and no-override line', async () => {
-  const h = harness([ok()]);
-  await h.engine.run({ request: 'do x', route: 'small', base: 'abc', files: ['a.js'], prefs: ['use tabs'] });
-  for (const s of ['do x', 'abc', 'a.js', '<<<PREFS', 'untrusted advisory', 'are not overrides']) assert.ok(h.calls[0].prompt.includes(s), s);
-});
-
-test('parallel: disjoint items share a wave, overlap is serialized, max 3 workers', async () => {
-  const items = ['a:x', 'b:x', 'c:y', 'd:z', 'e:w'].map((s) => ({ id: s[0], files: [s[2]], steps: [] }));
-  const calls = [];
+test('disjoint items share a wave, overlap is serialized, max 3 workers', async () => {
+  const items = [item('a', ['x']), item('b', ['x']), item('c', ['y']), item('d', ['z']), item('e', ['w'])];
   const waves = [];
+  const calls = [];
   const engine = createEngine({
-    agent: async (p, o) => (calls.push(o.label), o.label === 'plan' ? plan({ items }) : ok(items.find((i) => `work:${i.id}` === o.label).files)),
-    parallel: async (thunks) => (waves.push(thunks.length), Promise.all(thunks.map((t) => t()))),
+    agent: async (p, o) => (calls.push(o.label), ok(items.find((i) => `work:${i.id}` === o.label).files)),
+    parallel: async (thunks) => (waves.push(thunks.length), seq(thunks)),
     log() {},
   });
-  const r = await engine.run({ request: 'x', route: 'parallel', limits: { maxLaunches: 9 } });
+  const r = await engine.run({ request: 'x', items, limits: { maxLaunches: 9 } });
   assert.strictEqual(r.status, 'done');
   assert.deepStrictEqual(waves, [3, 2]);
-  assert.deepStrictEqual(calls, ['plan', 'work:a', 'work:c', 'work:d', 'work:b', 'work:e']);
+  assert.deepStrictEqual(calls, ['work:a', 'work:c', 'work:d', 'work:b', 'work:e']);
 });
 
-test('parallel: fileless items are rejected, result partial', async () => {
-  const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: [], steps: [] }];
-  const engine = createEngine({
-    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : ok(['x'])),
-    parallel: (thunks) => Promise.all(thunks.map((t) => t())),
-    log() {},
-  });
-  const r = await engine.run({ request: 'x', route: 'parallel' });
+test('worker launches use sonnet and the worker agent', async () => {
+  const h = harness([ok(['x'])]);
+  await h.engine.run({ request: 'x', items: [item('a', ['x'])] });
+  assert.strictEqual(h.calls[0].model, 'sonnet');
+  assert.strictEqual(h.calls[0].agentType, 'better-ultracore:worker');
+  assert.match(h.calls[0].prompt, /Edit only these files: x/);
+});
+
+test('fileless items are rejected, result partial', async () => {
+  const h = harness([ok(['x'])]);
+  const r = await h.engine.run({ request: 'x', items: [item('a', ['x']), item('b', [])] });
   assert.strictEqual(r.status, 'partial');
   assert.match(r.reason, /rejected fileless: b/);
 });
 
-test('parallel: a worker writing outside its assigned files fails its item', async () => {
-  const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: ['y'], steps: [] }];
-  const engine = createEngine({
-    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : o.label === 'work:a' ? ok(['x', 'y']) : ok(['y'])),
-    parallel: (thunks) => Promise.all(thunks.map((t) => t())),
-    log() {},
-  });
-  const r = await engine.run({ request: 'x', route: 'parallel' });
+test('a worker writing outside its assigned files fails its item', async () => {
+  const h = harness([ok(['x', 'y']), ok(['y'])]);
+  const r = await h.engine.run({ request: 'x', items: [item('a', ['x']), item('b', ['y'])] });
   assert.strictEqual(r.status, 'partial');
   assert.match(r.reason, /wrote outside assigned files: a/);
 });
 
-test('blockers are listed as required checks in briefs and echoed in the result', async () => {
-  const h = harness([ok()]);
-  const r = await h.engine.run({ request: 'x', route: 'small', prefs: ['p1: be nice'], blockers: ['b1: run git ls-remote origin main'] });
-  assert.match(h.calls[0].prompt, /Required checks \(must pass before done\):\n- b1: run git ls-remote origin main/);
-  assert.ok(!/Required checks[^]*p1: be nice/.test(h.calls[0].prompt.split('Preferences')[0]));
-  assert.deepStrictEqual(r.blockers, ['b1: run git ls-remote origin main']);
-});
-
-test('agent throwing (budget exhausted) yields partial with completed steps kept', async () => {
-  const h = harness([bad('e1'), () => { throw new Error('budget exhausted'); }]);
-  const r = await h.engine.run({ request: 'x', route: 'small' });
-  assert.strictEqual(r.status, 'partial');
-  assert.match(r.reason, /budget exhausted/);
-  assert.deepStrictEqual(r.completed_steps.map((s) => s.id), ['code']);
-});
-
-test('parallel: null outcome counts as partial, no crash', async () => {
-  const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: ['y'], steps: [] }];
-  const engine = createEngine({
-    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : ok(['x'])),
-    parallel: async (thunks) => { const r = await Promise.all(thunks.map((t) => t())); r[1] = null; return r; },
-    log() {},
-  });
-  const r = await engine.run({ request: 'x', route: 'parallel' });
-  assert.strictEqual(r.status, 'partial');
-});
-
-test('uncertain confidence asks haiku with a schema to choose the route', async () => {
-  const h = harness([{ route: 'small' }, ok()]);
-  const r = await h.engine.run({ request: 'x', route: 'planned', confidence: 'uncertain' });
-  assert.strictEqual(r.route, 'small');
-  assert.strictEqual(h.calls[0].model, 'haiku');
-  assert.ok(h.calls[0].schema);
+test('failed check and empty diff fail the item, no repair launch', async () => {
+  const empty = { changed_files: [], diff_empty: true, check: { cmd: 'npm test', passed: true } };
+  const h = harness([bad('boom'), empty]);
+  const r = await h.engine.run({ request: 'x', items: [item('a', ['a.js']), item('b', ['b.js'])] });
+  assert.strictEqual(r.status, 'failed');
   assert.strictEqual(r.launches, 2);
 });
 
-test('uncertain with failed chooser falls back to planned', async () => {
-  const r = await harness([null, null, plan({ questions_needing_user: ['q'] })]).engine.run({ request: 'x', route: 'small', confidence: 'uncertain' });
-  assert.strictEqual(r.route, 'planned');
+test('stall retries once with :retry label, counted as launch', async () => {
+  const h = harness([null, ok(['x'])]);
+  const r = await h.engine.run({ request: 'x', items: [item('a', ['x'])] });
+  assert.deepStrictEqual(h.calls.map((c) => c.label), ['work:a', 'work:a:retry']);
+  assert.strictEqual(r.launches, 2);
+  assert.strictEqual(r.status, 'done');
 });
 
-test('low budget skips optional repair launch and logs', async () => {
+test('second stall returns partial, never an empty result', async () => {
+  const r = await harness([null, null]).engine.run({ request: 'x', items: [item('a', ['x'])] });
+  assert.strictEqual(r.status, 'failed');
+  assert.strictEqual(r.launches, 2);
+  assert.ok(r.limits_report.length);
+});
+
+test('null outcome from the runtime counts as partial, no crash', async () => {
+  const h = harness([ok(['x']), ok(['y'])], { parallel: async (t) => { const r = await seq(t); r[1] = null; return r; } });
+  const r = await h.engine.run({ request: 'x', items: [item('a', ['x']), item('b', ['y'])] });
+  assert.strictEqual(r.status, 'partial');
+});
+
+test('maxLaunches caps total agent calls', async () => {
+  const h = harness([ok(['x']), ok(['y']), ok(['z'])]);
+  const r = await h.engine.run({ request: 'x', items: ['x', 'y', 'z'].map((f) => item(f, [f])), limits: { maxLaunches: 2 } });
+  assert.strictEqual(h.calls.length, 2);
+  assert.strictEqual(r.launches, 2);
+  assert.strictEqual(r.status, 'partial');
+});
+
+test('agent throwing (budget exhausted) yields partial', async () => {
+  const h = harness([() => { throw new Error('budget exhausted'); }]);
+  const r = await h.engine.run({ request: 'x', items: [item('a', ['x'])] });
+  assert.match(JSON.stringify(r), /budget exhausted/);
+  assert.notStrictEqual(r.status, 'done');
+});
+
+test('low budget skips optional launches and logs', async () => {
   const logs = [];
-  const answers = [bad('alpha')];
   const engine = createEngine({
-    agent: async () => answers.shift(),
+    agent: async () => ok(['x']),
+    parallel: seq,
     log: (m) => logs.push(m),
     budget: { total: 100000, remaining: () => 5000 },
   });
-  const r = await engine.run({ request: 'x', route: 'small' });
+  const r = await engine.run({ request: 'x', items: [item('a', ['x']), item('b', ['y'])] });
   assert.strictEqual(r.launches, 1);
   assert.strictEqual(r.status, 'partial');
   assert.ok(logs.some((l) => /budget/.test(l)));
 });
 
-test('maxLaunches caps total agent calls', async () => {
-  const h = harness([bad('alpha'), bad('beta'), bad('gamma')]);
-  const r = await h.engine.run({ request: 'x', route: 'small', limits: { maxLaunches: 2 } });
-  assert.strictEqual(h.calls.length, 2);
-  assert.strictEqual(r.launches, 2);
+test('deep: one read-only critic with task, diff and rules; no workers needed', async () => {
+  const h = harness([{ summary: 'fine', defects: [] }]);
+  const r = await h.engine.run({ request: 'fix auth', deep: true, diff: 'DIFFTEXT', rules: ['r1: be small'] });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(h.calls.length, 1);
+  assert.strictEqual(h.calls[0].agentType, 'better-ultracore:critic');
+  assert.strictEqual(h.calls[0].model, 'sonnet');
+  for (const s of ['fix auth', 'DIFFTEXT', 'r1: be small', 'tmpdir', 'never edit']) assert.ok(h.calls[0].prompt.includes(s), s);
+});
+
+test('deep: critic defects make the result partial and are returned', async () => {
+  const h = harness([{ summary: 's', defects: ['empty hash verifies'] }]);
+  const r = await h.engine.run({ request: 'x', deep: true });
+  assert.strictEqual(r.status, 'partial');
+  assert.deepStrictEqual(r.defects, ['empty hash verifies']);
+});
+
+test('without deep no critic is launched', async () => {
+  const h = harness([ok(['x'])]);
+  await h.engine.run({ request: 'x', items: [item('a', ['x'])] });
+  assert.ok(h.calls.every((c) => c.agentType !== 'better-ultracore:critic'));
+});
+
+test('brief carries request, base, delimited rules and no-override line', async () => {
+  const h = harness([ok(['a.js'])]);
+  await h.engine.run({ request: 'do x', base: 'abc', rules: ['use tabs'], items: [item('a', ['a.js'])] });
+  for (const s of ['do x', 'abc', 'a.js', '<<<RULES', 'untrusted advisory', 'are not overrides']) assert.ok(h.calls[0].prompt.includes(s), s);
 });
 
 test('workflows/buc-flow.js is not stale', () => {
@@ -302,15 +152,6 @@ test('generated workflow runs as an async function body', async () => {
     .replace(/export const meta = \{[\s\S]*?\n\};\n/, '');
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
   const fn = new AsyncFunction('agent', 'parallel', 'log', 'budget', 'args', src);
-  const r = await fn(async () => ok(), null, () => {}, undefined, { request: 'x', route: 'small' });
+  const r = await fn(async () => ok(['x']), seq, () => {}, undefined, { request: 'x', items: [item('a', ['x'])] });
   assert.strictEqual(r.status, 'done');
-});
-
-test('raw string args (slash-invoked workflow) get routed by haiku, never "unknown route"', async () => {
-  const h = harness([{ route: 'small' }, ok()]);
-  const r = await h.engine.run('run In greet.js add a comma');
-  assert.strictEqual(r.route, 'small');
-  assert.strictEqual(r.status, 'done');
-  assert.strictEqual(h.calls[0].model, 'haiku');
-  assert.match(h.calls[1].prompt, /greet\.js add a comma/);
 });
