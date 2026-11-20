@@ -62,15 +62,23 @@ function sumTokens(modelUsage, usage) {
   return t;
 }
 
-function headless(prompt, { arm, budget, timeoutMin, cwd, env }) {
+// Spawns claude directly (BUC_CLAUDE_BIN honoured) so session_id is available for resumes. Same JSON shape as buc run-headless plus session_id.
+function claudeCall(prompt, { arm, budget, timeoutMin, cwd, env, resume }) {
   const a = ARMS[arm];
-  const args = [path.join(ROOT, 'bin', 'buc'), 'run-headless', '--cwd', cwd, '--prompt', a.prefix + prompt,
-    '--model', 'sonnet', '--max-budget-usd', String(budget * a.budgetMult), '--timeout-min', String(timeoutMin),
-    '--allowed-tools', ALLOWED_TOOLS];
-  if (a.noPlugin) args.push('--no-plugin'); else args.push('--plugin-dir', ROOT);
-  const p = spawnSync('node', args, { encoding: 'utf8', maxBuffer: 1 << 28, cwd: ROOT, env });
-  const line = (p.stdout || '').trim().split('\n').pop();
-  try { return JSON.parse(line); } catch { return { exit: p.status, timed_out: false, elapsed_ms: 0, result: (p.stderr || '').slice(0, 500) }; }
+  const args = ['-p', prompt, '--output-format', 'json', '--model', 'sonnet', '--max-budget-usd', String(budget * a.budgetMult),
+    '--permission-mode', 'acceptEdits', '--allowedTools', ...ALLOWED_TOOLS.split(',')];
+  if (!a.noPlugin) args.push('--plugin-dir', ROOT);
+  if (resume) args.push('--resume', resume);
+  args.push(...a.extra);
+  const started = Date.now();
+  const p = spawnSync(process.env.BUC_CLAUDE_BIN || 'claude', args, { encoding: 'utf8', maxBuffer: 1 << 28, cwd, env, timeout: timeoutMin * 60000, killSignal: 'SIGTERM' });
+  let r;
+  try { r = JSON.parse((p.stdout || '').trim()); } catch { r = { result: (p.stdout || '').trim() || (p.stderr || '').slice(0, 500) || null }; }
+  return {
+    exit: p.status ?? p.signal, timed_out: !!(p.error && p.error.code === 'ETIMEDOUT'), elapsed_ms: Date.now() - started,
+    session_id: r.session_id || null, total_cost_usd: r.total_cost_usd ?? null, usage: r.usage ?? null, num_turns: r.num_turns ?? null,
+    subagent_stats: r.subagent_stats ?? null, model_usage: r.modelUsage ?? null, result: r.result ?? null,
+  };
 }
 
 // Independent token count: every transcript the run wrote (main loop, subagents, workflow agents), deduped by message id.
