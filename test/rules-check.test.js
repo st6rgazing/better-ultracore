@@ -73,13 +73,17 @@ test('no-ai-traces checks added lines and new commit messages, not pre-existing 
   write(dir, 'other.js', '// Generated with a tool\n');
   const t = turn(dir, 'edit app.js');
   assert.strictEqual(run('no-ai-traces', t).pass, true);
-  write(dir, 'app.js', 'a\n// written by Claude\n');
+  write(dir, 'app.js', 'a\n// see CLAUDE.md, .claude/ and CLAUDE_PLUGIN_ROOT\n');
+  assert.strictEqual(run('no-ai-traces', t).pass, true);
+  write(dir, 'app.js', 'a\n// Generated with [Claude Code]\n');
   const r = run('no-ai-traces', t);
   assert.strictEqual(r.pass, false);
   assert.match(r.detail, /app\.js:2/);
-  assert.ok(!r.detail.includes('written by'));
+  assert.ok(!r.detail.includes('Generated'));
+  write(dir, 'app.js', 'a\n// Co-Authored-By: Claude <x@y>\n');
+  assert.strictEqual(run('no-ai-traces', t).pass, false);
   git(dir, 'checkout', 'app.js');
-  git(dir, 'commit', '-qam', 'fix\n\nCo-Authored-By: someone');
+  git(dir, 'commit', '-qam', 'fix\n\nCo-Authored-By: Claude <noreply@anthropic.com>');
   assert.match(run('no-ai-traces', t).detail, /commit message/);
 });
 
