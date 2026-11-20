@@ -122,6 +122,23 @@ test('check-cmd runs only the command configured by the user', () => {
   assert.match(r.detail, /exit 3/);
 });
 
+test('check-cmd passes when nothing changed or the command cannot run', () => {
+  const dir = repo();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  write(dir, '.claude/buc.json', JSON.stringify({ checkCmd: 'node fail.js' }));
+  write(dir, 'fail.js', 'process.exit(1)\n');
+  const t = turn(dir, 'edit app');
+  const idle = run('check-cmd', t);
+  assert.strictEqual(idle.pass, true);
+  assert.match(idle.detail, /no files changed/);
+  write(dir, 'app.js', 'changed\n');
+  assert.strictEqual(run('check-cmd', t).pass, false);
+  write(dir, '.claude/buc.json', JSON.stringify({ checkCmd: 'definitely-not-a-command-xyz' }));
+  const gone = run('check-cmd', t);
+  assert.strictEqual(gone.pass, true);
+  assert.strictEqual(gone.detail, 'skipped');
+});
+
 test('check-cmd never executes commands found in prompt text', () => {
   const dir = repo();
   write(dir, 'dist', 'keep\n');
