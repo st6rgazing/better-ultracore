@@ -1,0 +1,67 @@
+# Example: build once, promote the exact same artifact.
+# Copy to .github/workflows/promote.yml and adapt the deploy step.
+#
+# Protections this file can NOT enforce by itself (set up in GitHub):
+#   - Branch protection on main: required PR reviews, required status checks
+#     (the "preflight" job), no force pushes.
+#   - Environment "production" with required reviewers.
+#   - CODEOWNERS for deploy workflows and server code.
+#   - OIDC deploy credentials (no long-lived cloud secrets) scoped to the
+#     production environment, configured at the cloud/hosting provider.
+# Hosting provider setup: a /__version endpoint returning {sha, artifact_sha256}.
+
+name: promote
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      sha256: ${{ steps.sum.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci && npm run build
+      - run: tar -czf dist.tgz dist
+      - id: sum
+        run: echo "sha256=$(sha256sum dist.tgz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - run: node bin/buc preflight promote --sha "$GITHUB_SHA" --artifact dist.tgz --manifest promote-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist.tgz
+            promote-manifest.json
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production # required reviewers gate this job
+    permissions:
+      contents: read
+      id-token: write # OIDC to the hosting provider
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: Verify the artifact being promoted
+        run: |
+          test "$(sha256sum dist.tgz | cut -d' ' -f1)" = "${{ needs.build.outputs.sha256 }}"
+          node bin/buc preflight promote --verify --manifest promote-manifest.json --artifact dist.tgz
+
+      - name: Deploy
+        run: echo "replace with your provider deploy of dist.tgz using OIDC credentials"
+
+      - name: Verify what is live
+        run: node bin/buc preflight promote --verify --manifest promote-manifest.json --url "${{ vars.PROD_URL }}/__version"
