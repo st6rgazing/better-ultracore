@@ -53,7 +53,7 @@ test('second stall returns partial', async () => {
 });
 
 test('repair loop stops at maxRepairs', async () => {
-  const r = await harness([bad('e1'), bad('e2'), bad('e3')]).engine.run({ request: 'x', route: 'small' });
+  const r = await harness([bad('alpha'), bad('beta'), bad('gamma')]).engine.run({ request: 'x', route: 'small' });
   assert.strictEqual(r.repairs, 2);
   assert.strictEqual(r.status, 'failed');
   assert.match(r.reason, /maxRepairs/);
