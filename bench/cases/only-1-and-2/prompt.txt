@@ -1,0 +1,1 @@
+stats.js has three bugs: 1) total() is off by one, 2) last() returns undefined, 3) percent() is 10x too small. fix only 1 and 2, keep it minimal, leave 3 alone
