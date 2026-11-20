@@ -47,3 +47,11 @@ test('silent when criteria present or prompt is long', () => {
   assert.strictEqual(intentLine(Array(70).fill('word').join(' ')), '');
   assert.strictEqual(intentLine(''), '');
 });
+
+test('sweep prompts get the sweep line, not the literal one', () => {
+  for (const p of ['remove all traces of ai like this', 'look through the whole app and drop the beta label', 'rename Foo everywhere']) {
+    const line = intentLine(p);
+    assert.match(line, /every occurrence/, p);
+    assert.doesNotMatch(line, /touch only what is named/, p);
+  }
+});
