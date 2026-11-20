@@ -61,3 +61,9 @@ test('refStatus: offline skips the network and is never stale', () => {
   const r = ctx.refStatus(f.a, 'main', { offline: true });
   assert.deepStrictEqual([r.remote_sha, r.stale], [null, false]);
 });
+
+test('mentionedRef finds an existing branch only', () => {
+  const f = fixture();
+  assert.strictEqual(ctx.mentionedRef(f.a, 'please look at main and fix it'), 'main');
+  assert.strictEqual(ctx.mentionedRef(f.a, 'do it on the server'), null);
+});
