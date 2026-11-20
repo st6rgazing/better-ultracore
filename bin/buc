@@ -2,7 +2,8 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { context } = require('../lib/context');
+const { classify } = require('../lib/classify');
+const { context, affected } = require('../lib/context');
 
 // DISPATCH HOOK: subcommands implemented by other modules, each exporting run(argv).
 // Guarded by an existence check so buc still works when a module is absent.
@@ -23,10 +24,25 @@ function parseFlags(argv) {
 }
 
 const commands = {
+  classify(argv) {
+    const f = parseFlags(argv);
+    if (!f.request) throw new Error('classify needs --request "<text>"');
+    console.log(JSON.stringify(classify(f.request)));
+  },
   context(argv) {
     const f = parseFlags(argv);
     if (!f.request) throw new Error('context needs --request "<text>"');
     console.log(JSON.stringify(context(f.request, { ref: f.ref, offline: f.offline })));
+  },
+  // buc affected --steps checkpoint.json --files a,b  (checkpoint: result JSON or its completed_steps array)
+  affected(argv) {
+    const f = parseFlags(argv);
+    if (!f.steps || !f.files) throw new Error('affected needs --steps <json file> and --files a,b');
+    const data = JSON.parse(fs.readFileSync(f.steps, 'utf8'));
+    const steps = Array.isArray(data) ? data : data.completed_steps;
+    const areas = f.files.split(',').filter(Boolean);
+    const rerun = affected(steps, areas);
+    console.log(JSON.stringify({ since: f.since || null, rerun, keep: steps.map((s) => s.id).filter((id) => !rerun.includes(id)) }));
   },
 };
 

@@ -100,3 +100,16 @@ test('affected: steps touching corrected files or areas', () => {
   assert.deepStrictEqual(ctx.affected(steps, ['ui']), ['work:b']);
   assert.deepStrictEqual(ctx.affected(steps, ['docs/']), []);
 });
+
+const BUC = path.join(__dirname, '..', 'bin', 'buc');
+const buc = (...a) => JSON.parse(execFileSync('node', [BUC, ...a], { encoding: 'utf8' }));
+
+test('buc classify prints route JSON', () => {
+  assert.strictEqual(buc('classify', '--request', 'review the auth module').route, 'review');
+});
+
+test('buc affected lists steps to rerun and keep', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-st-')), 's.json');
+  fs.writeFileSync(file, JSON.stringify({ completed_steps: [{ id: 'a', files: ['x/1.js'] }, { id: 'b', files: ['y/2.js'] }] }));
+  assert.deepStrictEqual(buc('affected', '--steps', file, '--files', 'x'), { since: null, rerun: ['a'], keep: ['b'] });
+});
