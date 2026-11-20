@@ -174,3 +174,24 @@ test('uncertain with failed chooser falls back to planned', async () => {
   const r = await harness([null, null, plan({ questions_needing_user: ['q'] })]).engine.run({ request: 'x', route: 'small', confidence: 'uncertain' });
   assert.strictEqual(r.route, 'planned');
 });
+
+test('low budget skips optional repair launch and logs', async () => {
+  const logs = [];
+  const answers = [bad('alpha')];
+  const engine = createEngine({
+    agent: async () => answers.shift(),
+    log: (m) => logs.push(m),
+    budget: { total: 100000, remaining: 5000 },
+  });
+  const r = await engine.run({ request: 'x', route: 'small' });
+  assert.strictEqual(r.launches, 1);
+  assert.strictEqual(r.status, 'partial');
+  assert.ok(logs.some((l) => /budget/.test(l)));
+});
+
+test('maxLaunches caps total agent calls', async () => {
+  const h = harness([bad('alpha'), bad('beta'), bad('gamma')]);
+  const r = await h.engine.run({ request: 'x', route: 'small', limits: { maxLaunches: 2 } });
+  assert.strictEqual(h.calls.length, 2);
+  assert.strictEqual(r.launches, 2);
+});
