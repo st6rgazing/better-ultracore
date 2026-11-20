@@ -2,6 +2,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawn } = require('node:child_process');
 const { classify } = require('../lib/classify');
 const { context, affected } = require('../lib/context');
 
@@ -11,6 +12,9 @@ const EXTERNAL = {
   prefs: path.join(__dirname, '..', 'lib', 'prefs', 'cli.js'),
   preflight: path.join(__dirname, '..', 'lib', 'preflight', 'cli.js'),
 };
+
+const KILL_GRACE_MS = 5000;
+const CLAUDE = process.env.BUC_CLAUDE_BIN || 'claude';
 
 const BOOLEAN = new Set(['offline']);
 
@@ -43,6 +47,38 @@ const commands = {
     const areas = f.files.split(',').filter(Boolean);
     const rerun = affected(steps, areas);
     console.log(JSON.stringify({ since: f.since || null, rerun, keep: steps.map((s) => s.id).filter((id) => !rerun.includes(id)) }));
+  },
+  // Wall clock enforced here: SIGTERM at the timeout, SIGKILL after a grace period.
+  'run-headless'(argv) {
+    const f = parseFlags(argv);
+    if (!f.prompt) throw new Error('run-headless needs --prompt "<text>"');
+    const args = ['-p', f.prompt, '--output-format', 'json', '--plugin-dir', f['plugin-dir'] || '.',
+      '--model', f.model || 'sonnet', '--max-budget-usd', f['max-budget-usd'] || '1'];
+    const started = Date.now();
+    const child = spawn(CLAUDE, args, { cwd: f.cwd || process.cwd(), stdio: ['ignore', 'pipe', 'inherit'], detached: true });
+    let out = '';
+    let timedOut = false;
+    child.stdout.on('data', (d) => { out += d; });
+    const term = setTimeout(() => {
+      timedOut = true;
+      process.kill(-child.pid, 'SIGTERM');
+      setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } }, KILL_GRACE_MS).unref();
+    }, parseFloat(f['timeout-min'] || '15') * 60000);
+    child.on('close', (code, signal) => {
+      clearTimeout(term);
+      let r = {};
+      try { r = JSON.parse(out); } catch { r = { result: out.trim() || null }; }
+      console.log(JSON.stringify({
+        exit: code ?? signal,
+        timed_out: timedOut,
+        elapsed_ms: Date.now() - started,
+        total_cost_usd: r.total_cost_usd ?? null,
+        usage: r.usage ?? null,
+        num_turns: r.num_turns ?? null,
+        subagent_stats: r.subagent_stats ?? r.modelUsage ?? null,
+        result: r.result ?? null,
+      }));
+    });
   },
 };
 

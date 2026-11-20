@@ -113,3 +113,22 @@ test('buc affected lists steps to rerun and keep', () => {
   fs.writeFileSync(file, JSON.stringify({ completed_steps: [{ id: 'a', files: ['x/1.js'] }, { id: 'b', files: ['y/2.js'] }] }));
   assert.deepStrictEqual(buc('affected', '--steps', file, '--files', 'x'), { since: null, rerun: ['a'], keep: ['b'] });
 });
+
+function fakeClaude(body) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-fc-')), 'claude');
+  fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  return file;
+}
+const headless = (bin, ...a) => JSON.parse(execFileSync('node', [BUC, 'run-headless', '--prompt', 'hi', ...a], { encoding: 'utf8', env: { ...process.env, BUC_CLAUDE_BIN: bin } }));
+
+test('run-headless maps claude json output', () => {
+  const bin = fakeClaude(`echo '{"result":"ok","total_cost_usd":0.5,"num_turns":3,"usage":{"input_tokens":9}}'`);
+  const r = headless(bin);
+  assert.deepStrictEqual([r.exit, r.timed_out, r.result, r.total_cost_usd, r.num_turns], [0, false, 'ok', 0.5, 3]);
+});
+
+test('run-headless kills on wall-clock timeout', () => {
+  const r = headless(fakeClaude('sleep 30'), '--timeout-min', '0.01');
+  assert.strictEqual(r.timed_out, true);
+  assert.ok(r.elapsed_ms < 10000);
+});
