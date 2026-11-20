@@ -24,7 +24,8 @@ jobs:
         run: npm ci --prefix fixtures/vite-express
 
       - name: Install Playwright chromium
-        run: npx --prefix fixtures/vite-express playwright install --with-deps chromium
+        working-directory: fixtures/vite-express
+        run: npx playwright install --with-deps chromium
 
       # Needs a token that can read branch protection (repo admin). Without
       # it the deploy-permissions check stays unverified and fails the run.
