@@ -8,3 +8,4 @@ fixtures/vite-express/test-results/
 fixtures/vite-express/playwright-report/
 .DS_Store
 .claude/worktrees/
+bench/private/
