@@ -229,10 +229,10 @@ function table(rows) {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(r);
   }
-  const out = ['| case | arm | n | pass rate | mean cost USD | mean tokens | mean elapsed s | mean turns | mean subagents | mean interventions |', '|---|---|---|---|---|---|---|---|---|---|'];
+  const out = ['| case | arm | n | first-try rate | final pass rate | mean cost USD | mean tokens to accept | mean elapsed s | mean turns | mean subagents | mean interventions |', '|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const [k, g] of groups) {
     const [c, arm] = k.split('|');
-    out.push(`| ${c} | ${arm} | ${g.length} | ${fmt(100 * g.filter((r) => r.accept_pass).length / g.length)}% | ${fmt(mean(g.map((r) => r.total_cost_usd)), 3)} | ${fmt(mean(g.map((r) => r.tokens.input + r.tokens.output)))} | ${fmt(mean(g.map((r) => r.elapsed_ms / 1000)), 1)} | ${fmt(mean(g.map((r) => r.num_turns)), 1)} | ${fmt(mean(g.map((r) => r.subagents)), 1)} | ${fmt(mean(g.map((r) => r.interventions)), 1)} |`);
+    out.push(`| ${c} | ${arm} | ${g.length} | ${fmt(100 * g.filter((r) => r.first_try_pass).length / g.length)}% | ${fmt(100 * g.filter((r) => r.final_pass).length / g.length)}% | ${fmt(mean(g.map((r) => r.total_cost_usd)), 3)} | ${fmt(mean(g.map((r) => r.tokens_to_accept)))} | ${fmt(mean(g.map((r) => r.elapsed_ms / 1000)), 1)} | ${fmt(mean(g.map((r) => r.num_turns)), 1)} | ${fmt(mean(g.map((r) => r.subagents)), 1)} | ${fmt(mean(g.map((r) => r.interventions)), 1)} |`);
   }
   return out.join('\n');
 }
