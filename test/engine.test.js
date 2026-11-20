@@ -181,7 +181,7 @@ test('low budget skips optional repair launch and logs', async () => {
   const engine = createEngine({
     agent: async () => answers.shift(),
     log: (m) => logs.push(m),
-    budget: { total: 100000, remaining: 5000 },
+    budget: { total: 100000, remaining: () => 5000 },
   });
   const r = await engine.run({ request: 'x', route: 'small' });
   assert.strictEqual(r.launches, 1);

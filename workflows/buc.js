@@ -128,7 +128,8 @@ function createEngine(deps) {
   // Returns a denial reason, or '' when a launch is allowed.
   function gate(optional, isReserved) {
     if (launches + 1 > limits.maxLaunches - (isReserved ? 0 : reserved)) return 'maxLaunches reached';
-    if (optional && budget.total && budget.remaining < MIN_BUDGET) {
+    const left = typeof budget.remaining === 'function' ? budget.remaining() : budget.remaining;
+    if (optional && budget.total && left < MIN_BUDGET) {
       log('skip optional launch: budget low');
       return 'budget low';
     }
