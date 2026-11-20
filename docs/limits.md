@@ -9,6 +9,19 @@
 | tokens | none | Enforced only with a `+Nk` budget (`budget.total`; optional launches are skipped when under 20000 remain) or `run-headless --max-budget-usd`. Otherwise advisory. |
 | read-only review | on | Enforced by the `reviewer-ro` tools allowlist (Read, Grep, Glob). |
 
+## Routes
+
+| Route | When | Who does the work | Launches |
+|---|---|---|---|
+| `small` | short, criteria or a single named file | the main session edits inline, runs `checkCmd` once, max 2 repairs | 0 |
+| `inline-plan` | short change, no criteria, at most one named file | main session states 2-3 assumed acceptance bullets in one line, then edits inline | 0 |
+| `review` | review-only verb | one read-only `reviewer-ro` agent | 1 |
+| `planned` | vague, 3+ sentences without criteria, or 2+ files without criteria | Workflow: planner (fable), coder | 2 |
+| `guarded` | risk keyword outside a prohibition clause ("Do not commit secrets" is ignored) | Workflow: planner only when there are no criteria and not exactly one named file, then coder, verifier | 2-3 |
+| `parallel` | explicit independent parts | Workflow: planner, up to 3 coders per wave | up to 6 |
+
+The haiku router runs only when the route is missing or confidence is `uncertain`. After an inline edit (`small`, `inline-plan`) the command runs `buc scan-diff` (deterministic secret scan of the working-tree diff and untracked files, no tokens).
+
 Every run returns a result, never an empty value: `status` is `done`, `partial`, `needs_user` or `failed`, with `launches`, `repairs`, `completed_steps` and `limits_report`. A worker that returns null is retried once with the same brief (counted as a launch); a second null ends the run as `partial`.
 
 ## Cancel and resume
