@@ -5,17 +5,20 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { simulate } = require('./sim-user');
 
 const ROOT = path.join(__dirname, '..');
 const CASES_DIR = path.join(__dirname, 'cases');
+const PRIVATE_DIR = path.join(__dirname, 'private');
 const RULES = path.join(__dirname, 'fixtures', 'rules.json');
 const ALLOWED_TOOLS = 'Bash(node:*),Bash(npm:*),Bash(git:*),Agent,Workflow,Read,Edit,Write,Grep,Glob';
 
+// ultra = stock Ultracode: no plugin, prompt unchanged, advisory settings plus xhigh effort.
 const ARMS = {
-  plain: { noPlugin: true, prefix: '', budgetMult: 1 },
-  'plain-claudemd': { noPlugin: true, prefix: '', budgetMult: 1, claudeMd: true },
-  buc: { noPlugin: false, prefix: '', budgetMult: 1, bucHome: true },
-  ultra: { noPlugin: true, prefix: 'ultracode ', budgetMult: 2 },
+  plain: { noPlugin: true, budgetMult: 1, extra: [] },
+  'plain-claudemd': { noPlugin: true, budgetMult: 1, claudeMd: true, extra: [] },
+  buc: { noPlugin: false, budgetMult: 1, bucHome: true, extra: [] },
+  ultra: { noPlugin: true, budgetMult: 2, extra: ['--settings', '{"ultracode":true,"workflowSizeGuideline":"small"}', '--effort', 'xhigh'] },
 };
 
 function parseArgs(argv) {
