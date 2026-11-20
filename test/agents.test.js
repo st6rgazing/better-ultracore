@@ -43,7 +43,7 @@ test('engine: every agent( call site passes model', () => {
 });
 
 test('engine: every launch( call site supplies a model', () => {
-  const sites = [...engine.matchAll(/\blaunch\((?!label|id|opts)/g)];
+  const sites = [...engine.matchAll(/\blaunch\((?!label)/g)];
   assert.ok(sites.length >= 2);
   for (const m of sites) assert.match(engine.slice(m.index, m.index + 600), /model: '/);
 });
