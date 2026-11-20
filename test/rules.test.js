@@ -78,3 +78,9 @@ test('buc rules import/list/why/pin/drop', () => {
   assert.ok(!store.loadRules().some((r) => r.id === 'cli-rule'));
   assert.notStrictEqual(buc('why', 'missing').status, 0);
 });
+
+test('normalize cleans keywords: strips punctuation, drops 1-char and meta words, keeps ui/ai', () => {
+  const { normalize } = require('../lib/rules/store');
+  const { rule } = normalize({ id: 'kw', rule: 'Keep it short.', when: { keywords: ['(chat', 'UI', 'ai', 'x', 'everything', 'prompt', 'menu!'] } });
+  assert.deepStrictEqual(rule.when.keywords, ['chat', 'ui', 'ai', 'menu']);
+});
