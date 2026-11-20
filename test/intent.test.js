@@ -55,3 +55,10 @@ test('sweep prompts get the sweep line, not the literal one', () => {
     assert.doesNotMatch(line, /touch only what is named/, p);
   }
 });
+
+test('vague fix of a screen asks to infer the defect', () => {
+  for (const p of ['can u fix the bug report screen', 'fix the settings page', 'improve this dialog']) {
+    assert.match(intentLine(p), /names no defect/, p);
+  }
+  assert.doesNotMatch(intentLine('fix the overflow on the settings page'), /names no defect/);
+});
