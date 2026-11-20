@@ -160,3 +160,17 @@ test('parallel: fileless items are rejected, result partial', async () => {
   assert.strictEqual(r.status, 'partial');
   assert.match(r.reason, /rejected fileless: b/);
 });
+
+test('uncertain confidence asks haiku with a schema to choose the route', async () => {
+  const h = harness([{ route: 'small' }, ok()]);
+  const r = await h.engine.run({ request: 'x', route: 'planned', confidence: 'uncertain' });
+  assert.strictEqual(r.route, 'small');
+  assert.strictEqual(h.calls[0].model, 'haiku');
+  assert.ok(h.calls[0].schema);
+  assert.strictEqual(r.launches, 2);
+});
+
+test('uncertain with failed chooser falls back to planned', async () => {
+  const r = await harness([null, null, plan({ questions_needing_user: ['q'] })]).engine.run({ request: 'x', route: 'small', confidence: 'uncertain' });
+  assert.strictEqual(r.route, 'planned');
+});
