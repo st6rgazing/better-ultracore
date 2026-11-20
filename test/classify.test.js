@@ -24,6 +24,10 @@ const table = [
   ['add dark mode and also add a CSV export', 'parallel'],
   ['1. fix a.js bug\n2. add b.py helper', 'parallel'],
   ['do the two things independently', 'parallel'],
+  ['audit how we set cookies in server.js', 'review'],
+  ['review the build script and tell me what is wrong', 'review'],
+  ['inspect how passwords are stored and explain it', 'review'],
+  ['review server.js and fix the cookie flags', 'small'],
 ];
 
 for (const [req, route] of table) {
