@@ -32,8 +32,8 @@ function run(input) {
     if (sessionId && !checked.length) store.clearTurn(sessionId);
     if (sessionId && checked.length) {
       store.writeTurn(sessionId, {
-        session_id: sessionId, cwd, prompt, kind, head: tryGit(cwd, 'rev-parse', 'HEAD')?.trim() || null,
-        porcelain: tryGit(cwd, 'status', '--porcelain') || '',
+        session_id: sessionId, cwd, root: root.trim(), prompt, kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
+        porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
         rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks: checked.map((r) => r.check.cmd),
       });
     }

@@ -103,6 +103,20 @@ test('a prompt with nothing to check drops the previous turn file', () => {
   assert.strictEqual(hook('stop-check.js', { session_id: 's4b', cwd: dir }, home), null);
 });
 
+test('checks run from the repo root when the prompt came from a subdirectory', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  fs.mkdirSync(path.join(dir, 'sub'));
+  const sub = path.join(dir, 'sub');
+  hook('inject.js', { prompt: 'tell me what this does', cwd: sub, session_id: 's4c' }, home);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(home, 'turn-s4c.json'), 'utf8')).root, fs.realpathSync(dir));
+  fs.writeFileSync(path.join(sub, 'b.js'), 'x\n');
+  const out = hook('stop-check.js', { session_id: 's4c', cwd: sub }, home);
+  assert.strictEqual(out.decision, 'block');
+  assert.match(out.reason, /files changed: sub\//);
+});
+
 test('stop-check output carries no secret values', () => {
   const dir = repo();
   const home = tmp('buc-home-');
