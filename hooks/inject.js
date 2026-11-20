@@ -3,9 +3,15 @@
 const { execFileSync } = require('node:child_process');
 const { mentionedRef } = require('../lib/context');
 const { configuredCmd } = require('../lib/rules/check');
-const { retrieve } = require('../lib/rules/retrieve');
+const path = require('node:path');
+const { retrieve, render } = require('../lib/rules/retrieve');
 const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
+const feedback = require('../lib/rules/feedback');
+const { intentLine } = require('../lib/intent');
+const { probeLine } = require('../lib/probe');
+
+const MAX_CONTEXT = 800;
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 const tryGit = (cwd, ...args) => { try { return git(cwd, ...args); } catch { return null; } };
@@ -22,16 +28,35 @@ function staleLine(root, prompt) {
   return `You named ${ref}: run git fetch origin ${ref} (read-only for the checkout), then read files via git show origin/${ref}:<path> and cite the remote SHA. Do not use the local copy.`;
 }
 
+// Keep the top rules that fit beside the fixed lines; the lowest-score rules go first.
+function fit(matched, fixed) {
+  for (let n = matched.length; n >= 0; n--) {
+    const kept = matched.slice(0, n);
+    const block = render(kept);
+    const kn = block ? block.split('\n').length - 1 : 0;
+    const text = [block, ...fixed].filter(Boolean).join('\n');
+    if (text.length <= MAX_CONTEXT || n === 0) return { kept: kept.slice(0, kn), block: n === 0 ? '' : block };
+  }
+  return { kept: [], block: '' };
+}
+
 function run(input) {
   const { prompt = '', cwd = process.cwd(), session_id: sessionId } = input;
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
-  const { matched, kind, block } = retrieve({ prompt, cwd, rules: store.loadRules() });
-  const parts = [block];
+  const repo = root ? path.basename(root.trim()) : null;
+  try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
+  const { matched: all, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
+  const fixed = [];
+  if (root) {
+    fixed.push(staleLine(root.trim(), prompt));
+    const cmd = configuredCmd(root.trim());
+    if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
+  }
+  fixed.push(intentLine(prompt, { kind }), probeLine(prompt));
+  const { kept: matched, block } = fit(all, fixed.filter(Boolean));
+  if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
   if (sessionId && !root) store.clearTurn(sessionId);
   if (root) {
-    parts.push(staleLine(root.trim(), prompt));
-    const cmd = configuredCmd(root.trim());
-    if (cmd && matched.length) parts.push(`Check command: ${cmd}`);
     const checked = matched.filter((r) => r.check.cmd);
     if (sessionId && !checked.length) store.clearTurn(sessionId);
     if (sessionId && checked.length) {
@@ -42,7 +67,7 @@ function run(input) {
       });
     }
   }
-  const text = parts.filter(Boolean).join('\n');
+  const text = [block, ...fixed].filter(Boolean).join('\n');
   return text ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } } : null;
 }
 
