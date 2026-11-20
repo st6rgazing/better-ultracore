@@ -53,3 +53,24 @@ test('buc scan-diff: untracked .env with a secret warns (exit 0); value never pr
   assert.match(r.stdout, /^warn \.env: untracked secret file/m);
   assert.ok(!r.stdout.includes(key));
 });
+
+test('secrets: default fingerprint salt is per-repo, so same value differs across repos', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const key = ['sk_', 'live_', 'A1b2C3d4E5f6G7h8'].join('');
+  const fp = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-salt-'));
+    const sh = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir });
+    sh('init', '-q', '-b', 'main');
+    fs.writeFileSync(path.join(dir, 'a.js'), `const k = '${key}';\n`);
+    sh('add', '.');
+    sh('commit', '-qm', 'init');
+    const r = secrets.run({ dir, distDir: path.join(dir, 'dist') });
+    return r.findings[0].fingerprint;
+  };
+  const [a, b] = [fp(), fp()];
+  assert.notStrictEqual(a, b);
+  assert.notStrictEqual(a, secrets.fingerprint(key, ''));
+});
