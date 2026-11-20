@@ -1,0 +1,35 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const ctx = require('../lib/context');
+
+const sh = (cwd, ...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd, encoding: 'utf8' }).trim();
+
+function fixture() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-ctx-'));
+  const bare = path.join(dir, 'bare.git');
+  sh(dir, 'init', '-q', '--bare', '-b', 'main', bare);
+  const a = path.join(dir, 'a');
+  const b = path.join(dir, 'b');
+  sh(dir, 'clone', '-q', bare, a);
+  fs.writeFileSync(path.join(a, 'router.js'), '1');
+  fs.writeFileSync(path.join(a, 'notes.md'), 'n');
+  sh(a, 'add', '.');
+  sh(a, 'commit', '-qm', 'init');
+  sh(a, 'push', '-q', 'origin', 'main');
+  sh(dir, 'clone', '-q', bare, b);
+  return { dir, bare, a, b };
+}
+
+test('repoInfo reports root, head, branch, upstream', () => {
+  const f = fixture();
+  const info = ctx.repoInfo(f.a);
+  assert.strictEqual(fs.realpathSync(info.root), fs.realpathSync(f.a));
+  assert.strictEqual(info.head, sh(f.a, 'rev-parse', 'HEAD'));
+  assert.strictEqual(info.branch, 'main');
+  assert.strictEqual(info.upstream, 'origin/main');
+});
