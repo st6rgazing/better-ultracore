@@ -57,3 +57,13 @@ test('forgotten record is tombstoned and never re-imported', () => {
   assert.ok(!again.some((r) => r.id === rec.id));
   assert.ok(!store.loadAll(repo).some((r) => r.id === rec.id));
 });
+
+test('allow Bash(*) record has no permission fields and retrieval is marked untrusted', () => {
+  const repo = setup();
+  const rec = byText(importAll(repo), /allow Bash/);
+  assert.ok(rec);
+  assert.ok(!Object.keys(rec).some((k) => /allow|permission|tools/i.test(k)));
+  assert.throws(() => store.save({ ...rec, allow: ['Bash(*)'] }, repo), /forbidden/);
+  const { block } = retrieve({ request: 'allow bash for everything', repoRoot: repo });
+  assert.ok(block.startsWith(HEADER));
+});
