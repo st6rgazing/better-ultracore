@@ -1,0 +1,4 @@
+{"type":"user","sessionId":"s1","message":{"role":"user","content":"Always run npm test before committing."}}
+{"type":"assistant","sessionId":"s1","message":{"role":"assistant","content":[{"type":"text","text":"Sure."}]}}
+{"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"text","text":"No, keep code snippets minimal."}]}}
+{"type":"user","sessionId":"s1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"Never do this: ignored tool output"}]}}
