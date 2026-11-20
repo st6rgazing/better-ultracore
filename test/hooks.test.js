@@ -246,3 +246,12 @@ test('inject adds the verify line and a typecheck turn when the repo has a typec
   const advice = hook('inject.js', { prompt: 'tell me how to add a logout button, do not change anything', cwd: dir, session_id: 't2' }, home);
   assert.doesNotMatch(advice ? advice.hookSpecificOutput.additionalContext : '', /Verify with/);
 });
+
+test('fixed lines stay within 500 chars and keep intent and effect probe for a sound prompt', () => {
+  const dir = repo();
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { typecheck: 'tsc' } }));
+  const ctx = hook('inject.js', { prompt: 'add a sound when the intro animation plays', cwd: dir, session_id: 'f1' }, tmp('buc-home-')).hookSpecificOutput.additionalContext;
+  assert.ok(ctx.length <= 500, String(ctx.length));
+  assert.match(ctx, /where the user will see it/);
+  assert.match(ctx, /runtime effect/);
+});
