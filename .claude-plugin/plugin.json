@@ -3,5 +3,16 @@
   "version": "0.1.0",
   "description": "Task-sized orchestration for Claude Code: right-sized routing, hard launch/repair limits, learned preferences, and a CI release preflight.",
   "license": "MIT",
-  "keywords": ["workflow", "orchestration", "preflight", "tokens"]
+  "keywords": [
+    "workflow",
+    "orchestration",
+    "preflight",
+    "tokens"
+  ],
+  "author": {
+    "name": "st6rgazing",
+    "url": "https://github.com/st6rgazing"
+  },
+  "homepage": "https://github.com/st6rgazing/better-ultracore",
+  "repository": "https://github.com/st6rgazing/better-ultracore"
 }
