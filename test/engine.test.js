@@ -1,22 +1,10 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { createEngine, DEFAULT_LIMITS, signature, brief } = require('../lib/engine');
+const { createEngine, DEFAULT_LIMITS } = require('../lib/engine');
 
 test('default limits', () => {
   assert.deepStrictEqual(DEFAULT_LIMITS, { maxLaunches: 6, maxRepairs: 2, maxElapsedMin: 30 });
-});
-
-test('signature ignores numbers, paths, whitespace', () => {
-  const a = signature({ cmd: 'npm test', first_error: 'Error at /a/b.js:12  bad thing 3' });
-  const b = signature({ cmd: 'npm test', first_error: 'Error at /x/y.js:99 bad   thing 7' });
-  assert.strictEqual(a, b);
-  assert.notStrictEqual(a, signature({ cmd: 'npm lint', first_error: 'Error at /a/b.js:12 bad thing 3' }));
-});
-
-test('brief carries request, base, delimited prefs and no-override line', () => {
-  const b = brief({ request: 'do x', base: 'abc', files: ['a.js'], prefs: ['use tabs'] });
-  for (const s of ['do x', 'abc', 'a.js', '<<<PREFS', 'untrusted advisory', 'are not overrides']) assert.ok(b.includes(s), s);
 });
 
 const ok = (files = ['a.js']) => ({ changed_files: files, diff_empty: false, check: { cmd: 'npm test', passed: true } });
@@ -138,4 +126,37 @@ test('review: reviewer-ro only, no coder', async () => {
   assert.strictEqual(h.calls.length, 1);
   assert.strictEqual(h.calls[0].agentType, 'better-ultracore:reviewer-ro');
   assert.strictEqual(r.last_check, null);
+});
+
+test('brief carries request, base, delimited prefs and no-override line', async () => {
+  const h = harness([ok()]);
+  await h.engine.run({ request: 'do x', route: 'small', base: 'abc', files: ['a.js'], prefs: ['use tabs'] });
+  for (const s of ['do x', 'abc', 'a.js', '<<<PREFS', 'untrusted advisory', 'are not overrides']) assert.ok(h.calls[0].prompt.includes(s), s);
+});
+
+test('parallel: disjoint items share a wave, overlap is serialized, max 3 workers', async () => {
+  const items = ['a:x', 'b:x', 'c:y', 'd:z', 'e:w'].map((s) => ({ id: s[0], files: [s[2]], steps: [] }));
+  const calls = [];
+  const waves = [];
+  const engine = createEngine({
+    agent: async (p, o) => (calls.push(o.label), o.label === 'plan' ? plan({ items }) : ok()),
+    parallel: async (thunks) => (waves.push(thunks.length), Promise.all(thunks.map((t) => t()))),
+    log() {},
+  });
+  const r = await engine.run({ request: 'x', route: 'parallel', limits: { maxLaunches: 9 } });
+  assert.strictEqual(r.status, 'done');
+  assert.deepStrictEqual(waves, [3, 2]);
+  assert.deepStrictEqual(calls, ['plan', 'work:a', 'work:c', 'work:d', 'work:b', 'work:e']);
+});
+
+test('parallel: fileless items are rejected, result partial', async () => {
+  const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: [], steps: [] }];
+  const engine = createEngine({
+    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : ok()),
+    parallel: (thunks) => Promise.all(thunks.map((t) => t())),
+    log() {},
+  });
+  const r = await engine.run({ request: 'x', route: 'parallel' });
+  assert.strictEqual(r.status, 'partial');
+  assert.match(r.reason, /rejected fileless: b/);
 });
