@@ -1,0 +1,1 @@
+Review auth.js for security problems and list them. This is review only: do not modify, create or delete any file.
