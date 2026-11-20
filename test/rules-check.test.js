@@ -90,6 +90,24 @@ test('exact-copy needs the new string present and the old one gone', () => {
   assert.strictEqual(run('exact-copy', t).pass, true);
 });
 
+test('exact-copy reads old and new from a quoted pair', () => {
+  const dir = repo();
+  write(dir, 'app.js', 'const label = "Sign in";\n');
+  git(dir, 'commit', '-qam', 'label');
+  for (const p of ['change "Sign in" to "Log in"', 'change `Sign in` with `Log in`', "change 'Sign in' → 'Log in'"]) {
+    git(dir, 'checkout', '-q', 'app.js');
+    const t = turn(dir, p);
+    write(dir, 'app.js', 'const label = "Log in";\n');
+    assert.strictEqual(run('exact-copy', t).pass, true, p);
+    write(dir, 'app.js', 'const label = "Sign in Log in";\n');
+    assert.match(run('exact-copy', t).detail, /old string still present/);
+  }
+  git(dir, 'checkout', '-q', 'app.js');
+  const t = turn(dir, 'say "hello there" in the header');
+  write(dir, 'app.js', 'const label = "hello there";\n');
+  assert.strictEqual(run('exact-copy', t).pass, true);
+});
+
 test('check-cmd runs only the command configured by the user', () => {
   const dir = repo();
   const t = turn(dir, 'make `node ok.js` pass');
