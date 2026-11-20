@@ -45,7 +45,7 @@ test('inject prints nothing for irrelevant prompts and injects matched rules', (
   const dir = repo();
   const home = tmp('buc-home-');
   seed(home, [rule('short-answers', { keywords: ['answer'] })]);
-  assert.strictEqual(hook('inject.js', { prompt: 'fix the header', cwd: dir, session_id: 's1' }, home), null);
+  assert.doesNotMatch(hook('inject.js', { prompt: 'fix the header', cwd: dir, session_id: 's1' }, home)?.hookSpecificOutput.additionalContext || '', /Rule short-answers/);
   const out = hook('inject.js', { prompt: 'give me the answer', cwd: dir, session_id: 's1' }, home);
   assert.strictEqual(out.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
   assert.match(out.hookSpecificOutput.additionalContext, /Rule short-answers\./);
@@ -68,7 +68,7 @@ test('inject: no remote → nothing; named ref → fetch-and-read hint; known ah
   const home = tmp('buc-home-');
   seed(home, []);
   const ask = () => hook('inject.js', { prompt: 'look at main please', cwd: dir, session_id: 's3' }, home);
-  assert.strictEqual(ask(), null);
+  assert.doesNotMatch(ask()?.hookSpecificOutput.additionalContext || '', /git fetch/);
   git(dir, 'remote', 'add', 'origin', dir);
   assert.match(ask().hookSpecificOutput.additionalContext, /git fetch origin main.*git show origin\/main:<path>/);
   git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
@@ -182,4 +182,45 @@ test('buc learn --dry-run skips subagent and temp dirs', () => {
   fs.writeFileSync(path.join(root, '-private-tmp-bench-run', 'c.jsonl'), line('no, bench turn'));
   const r = spawnSync('node', [path.join(__dirname, '..', 'bin', 'buc'), 'learn', '--dry-run', '--projects-root', root], { encoding: 'utf8' });
   assert.deepStrictEqual(JSON.parse(r.stdout).map((c) => c.text), ['no, keep it smaller']);
+});
+
+test('inject adds the intent line for a short criteria-free edit prompt', () => {
+  const out = hook('inject.js', { prompt: 'make the card slightly smaller', cwd: repo(), session_id: 'i1' }, tmp('buc-home-'));
+  assert.match(out.hookSpecificOutput.additionalContext, /Read the request literally/);
+});
+
+test('inject adds the probe line for the risky prompt', () => {
+  const p = fs.readFileSync(path.join(__dirname, '..', 'bench', 'cases', 'risky', 'prompt.txt'), 'utf8');
+  const out = hook('inject.js', { prompt: p, cwd: repo(), session_id: 'p1' }, tmp('buc-home-'));
+  assert.match(out.hookSpecificOutput.additionalContext, /throwaway script outside the repo/);
+});
+
+test('inject stays within 800 chars with five long rules and every line', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  const long = (i) => ({ ...rule(`long-${i}`, { keywords: ['password'] }), rule: `Long rule ${i} ${'x'.repeat(150)}.`, count: 10 - i });
+  seed(home, [1, 2, 3, 4, 5].map(long));
+  const out = hook('inject.js', { prompt: 'change password hashing in auth.js to scrypt', cwd: dir, session_id: 'l1' }, home);
+  const ctx = out.hookSpecificOutput.additionalContext;
+  assert.ok(ctx.length <= 800, String(ctx.length));
+  assert.match(ctx, /Read the request literally/);
+  assert.match(ctx, /throwaway script/);
+  assert.match(ctx, /Long rule 1 /);
+  assert.doesNotMatch(ctx, /Long rule 5 /);
+});
+
+test('a correction after a turn with matched rules increments byRepo misses', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seed(home, [rule('short-answers', { keywords: ['answer'] })]);
+  hook('inject.js', { prompt: 'give me the answer', cwd: dir, session_id: 'c1' }, home);
+  hook('inject.js', { prompt: 'no, that is not what i meant', cwd: dir, session_id: 'c1' }, home);
+  const rules = JSON.parse(fs.readFileSync(path.join(home, 'rules.json'), 'utf8'));
+  assert.strictEqual(rules[0].byRepo[path.basename(dir)].misses, 1);
+});
+
+test('inject exits 0 and prints nothing on malformed stdin', () => {
+  const r = spawnSync('node', [path.join(HOOKS, 'inject.js')], { input: '{not json', encoding: 'utf8', env: { ...process.env, BUC_HOME: tmp('buc-home-') } });
+  assert.strictEqual(r.status, 0);
+  assert.strictEqual(r.stdout.trim(), '');
 });
