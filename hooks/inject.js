@@ -23,11 +23,13 @@ function run(input) {
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
   const { matched, kind, block } = retrieve({ prompt, cwd, rules: store.loadRules() });
   const parts = [block];
+  if (sessionId && !root) store.clearTurn(sessionId);
   if (root) {
     parts.push(staleLine(root.trim(), prompt));
     const cmd = configuredCmd(root.trim());
     if (cmd && matched.length) parts.push(`Check command: ${cmd}`);
     const checked = matched.filter((r) => r.check.cmd);
+    if (sessionId && !checked.length) store.clearTurn(sessionId);
     if (sessionId && checked.length) {
       store.writeTurn(sessionId, {
         session_id: sessionId, cwd, prompt, kind, head: tryGit(cwd, 'rev-parse', 'HEAD')?.trim() || null,

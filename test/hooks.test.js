@@ -91,6 +91,16 @@ test('stop-check blocks once, never when stop_hook_active, and counts the violat
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(home, 'rules.json'), 'utf8'))[0].violations, 1);
 });
 
+test('a prompt with nothing to check drops the previous turn file', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  hook('inject.js', { prompt: 'tell me what this does', cwd: dir, session_id: 's4b' }, home);
+  hook('inject.js', { prompt: 'fix the header', cwd: dir, session_id: 's4b' }, home);
+  fs.writeFileSync(path.join(dir, 'app.js'), 'edited\n');
+  assert.strictEqual(hook('stop-check.js', { session_id: 's4b', cwd: dir }, home), null);
+});
+
 test('stop-check output carries no secret values', () => {
   const dir = repo();
   const home = tmp('buc-home-');
