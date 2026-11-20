@@ -234,3 +234,15 @@ test('a correction on the second turn replaces the intent line', () => {
   assert.match(ctx, /different reading/);
   assert.doesNotMatch(ctx, /where the user will see it|Read the request literally/);
 });
+
+test('inject adds the verify line and a typecheck turn when the repo has a typecheck script', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { typecheck: 'tsc' } }));
+  const ctx = hook('inject.js', { prompt: 'add a logout button', cwd: dir, session_id: 't1' }, home).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /Verify with npm run -s typecheck/);
+  const turn = JSON.parse(fs.readFileSync(path.join(home, 'turn-t1.json'), 'utf8'));
+  assert.deepStrictEqual(turn.checks, ['typecheck']);
+  const advice = hook('inject.js', { prompt: 'tell me how to add a logout button, do not change anything', cwd: dir, session_id: 't2' }, home);
+  assert.doesNotMatch(advice ? advice.hookSpecificOutput.additionalContext : '', /Verify with/);
+});
