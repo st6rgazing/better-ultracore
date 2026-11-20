@@ -1,0 +1,1 @@
+Look at main and tell me the current version in VERSION; write it into answer.txt.
