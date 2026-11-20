@@ -1,7 +1,7 @@
 'use strict';
 // UserPromptSubmit: inject matched rules, a stale-ref note and the check command. Offline, no model call.
 const { execFileSync } = require('node:child_process');
-const { mentionedRef } = require('../lib/context');
+const { mentionedRef, repoKey } = require('../lib/context');
 const { configuredCmd, typecheckCmd } = require('../lib/rules/check');
 const path = require('node:path');
 const { retrieve, render } = require('../lib/rules/retrieve');
@@ -70,7 +70,7 @@ function run(input) {
   const { prompt = '', cwd = process.cwd(), session_id: sessionId, transcript_path: transcriptPath } = input;
   const hadPrev = hadPreviousTurn(sessionId, transcriptPath);
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
-  const repo = root ? path.basename(root.trim()) : null;
+  const repo = root ? repoKey(root.trim()) : null;
   try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
   const { matched: all, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
   const fixed = [];
