@@ -128,6 +128,20 @@ node bench/run.js --dry
 
 The live benchmark spends real money. See [bench/README.md](bench/README.md).
 
+## Results
+
+Measured on live runs against plain Claude Code (pass rate, tokens, cost, interventions, blind code review): [docs/results.md](docs/results.md). In short: 14/14 vs 12/14 first-pass verified success, about 22% more tokens/cost, and top blind-review scores on risky changes after the verifier fix.
+
+## Install from GitHub
+
+```bash
+claude plugin marketplace add st6rgazing/better-ultracore
+```
+
+```bash
+claude plugin install better-ultracore@better-ultracore-local
+```
+
 ## Research
 
 What user reports changed in the design: [docs/research.md](docs/research.md).
