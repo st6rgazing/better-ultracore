@@ -1,6 +1,6 @@
 {
   "name": "better-ultracore-local",
-  "description": "better-ultracore: task-sized Claude Code orchestration, learned preferences and a CI release preflight.",
+  "description": "better-ultracore: learns what you keep correcting and checks every turn against it, with an opt-in release preflight.",
   "owner": {
     "name": "st6rgazing"
   },
@@ -8,7 +8,7 @@
     {
       "name": "better-ultracore",
       "source": "./",
-      "description": "Task-sized orchestration, learned preferences, release preflight."
+      "description": "Learned correction rules, one-revision stop check, opt-in preflight."
     }
   ]
 }
