@@ -263,18 +263,27 @@ function createEngine(deps) {
       if (p.early) return p.early;
       const { waves, rejected } = schedule(p.plan.items);
       const outcomes = [];
+      const violators = [];
       let n = 0;
       for (const wave of waves) {
-        const done = await deps.parallel(wave.map((it) => () => work(
-          `work:${it.id}`,
-          brief({ ...ctx, files: it.files }, bullets('Steps', it.steps)),
-          n++ > 0,
-        )));
+        const done = await deps.parallel(wave.map((it) => async () => {
+          const wid = `work:${it.id}`;
+          const o = await work(wid, brief({ ...ctx, files: it.files }, bullets('Steps', it.steps)), n++ > 0);
+          // One writer per file: anything outside the item's own set fails the item.
+          const touched = steps.filter((s) => s.id === wid || s.id.startsWith(`${wid}:`)).flatMap((s) => s.files);
+          if (touched.some((f) => !it.files.includes(f))) {
+            violators.push(it.id);
+            return { ...o, state: 'failed', reason: 'wrote outside assigned files' };
+          }
+          return o;
+        }));
         outcomes.push(...done.map((o) => o || { state: 'partial', reason: 'worker returned nothing' }));
       }
       const passed = outcomes.filter((o) => o.state === 'passed').length;
       const status = passed && passed === outcomes.length && !rejected.length ? 'done' : passed ? 'partial' : 'failed';
-      const why = [`${passed}/${outcomes.length} items passed`, rejected.length && `rejected fileless: ${rejected.map((i) => i.id).join(', ')}`].filter(Boolean).join('; ');
+      const why = [`${passed}/${outcomes.length} items passed`,
+        rejected.length && `rejected fileless: ${rejected.map((i) => i.id).join(', ')}`,
+        violators.length && `wrote outside assigned files: ${violators.join(', ')}`].filter(Boolean).join('; ');
       const last = outcomes.map((o) => o.last).filter(Boolean).pop();
       return result(status, 'parallel', why, last);
     },

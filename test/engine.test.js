@@ -142,7 +142,7 @@ test('parallel: disjoint items share a wave, overlap is serialized, max 3 worker
   const calls = [];
   const waves = [];
   const engine = createEngine({
-    agent: async (p, o) => (calls.push(o.label), o.label === 'plan' ? plan({ items }) : ok()),
+    agent: async (p, o) => (calls.push(o.label), o.label === 'plan' ? plan({ items }) : ok(items.find((i) => `work:${i.id}` === o.label).files)),
     parallel: async (thunks) => (waves.push(thunks.length), Promise.all(thunks.map((t) => t()))),
     log() {},
   });
@@ -155,13 +155,25 @@ test('parallel: disjoint items share a wave, overlap is serialized, max 3 worker
 test('parallel: fileless items are rejected, result partial', async () => {
   const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: [], steps: [] }];
   const engine = createEngine({
-    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : ok()),
+    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : ok(['x'])),
     parallel: (thunks) => Promise.all(thunks.map((t) => t())),
     log() {},
   });
   const r = await engine.run({ request: 'x', route: 'parallel' });
   assert.strictEqual(r.status, 'partial');
   assert.match(r.reason, /rejected fileless: b/);
+});
+
+test('parallel: a worker writing outside its assigned files fails its item', async () => {
+  const items = [{ id: 'a', files: ['x'], steps: [] }, { id: 'b', files: ['y'], steps: [] }];
+  const engine = createEngine({
+    agent: async (p, o) => (o.label === 'plan' ? plan({ items }) : o.label === 'work:a' ? ok(['x', 'y']) : ok(['y'])),
+    parallel: (thunks) => Promise.all(thunks.map((t) => t())),
+    log() {},
+  });
+  const r = await engine.run({ request: 'x', route: 'parallel' });
+  assert.strictEqual(r.status, 'partial');
+  assert.match(r.reason, /wrote outside assigned files: a/);
 });
 
 test('agent throwing (budget exhausted) yields partial with completed steps kept', async () => {
