@@ -1,0 +1,8 @@
+node_modules/
+.buc/
+*.log
+bench/results/
+evals/results/
+fixtures/vite-express/dist/
+fixtures/vite-express/test-results/
+fixtures/vite-express/playwright-report/

@@ -1,0 +1,12 @@
+{
+  "name": "better-ultracore",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "bin": { "buc": "bin/buc" },
+  "scripts": {
+    "test": "node --test test/",
+    "validate": "claude plugin validate ."
+  },
+  "engines": { "node": ">=20" }
+}

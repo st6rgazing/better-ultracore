@@ -1,0 +1,7 @@
+{
+  "name": "better-ultracore-local",
+  "owner": { "name": "st6rgazing" },
+  "plugins": [
+    { "name": "better-ultracore", "source": "./", "description": "Task-sized orchestration, learned preferences, release preflight." }
+  ]
+}

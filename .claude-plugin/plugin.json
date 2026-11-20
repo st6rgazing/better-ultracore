@@ -1,0 +1,7 @@
+{
+  "name": "better-ultracore",
+  "version": "0.1.0",
+  "description": "Task-sized orchestration for Claude Code: right-sized routing, hard launch/repair limits, learned preferences, and a CI release preflight.",
+  "license": "MIT",
+  "keywords": ["workflow", "orchestration", "preflight", "tokens"]
+}
