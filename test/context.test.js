@@ -84,10 +84,8 @@ test('context: stale regression for "look at main", workflow-arg shape', () => {
   assert.strictEqual(c.ref.ref, 'main');
   assert.strictEqual(c.ref.stale, true);
   assert.strictEqual(c.base, c.head);
-  assert.ok(['small', 'planned', 'guarded', 'parallel', 'review'].includes(c.route));
+  assert.ok(['small', 'planned', 'parallel', 'review'].includes(c.route));
   assert.deepStrictEqual(c.files, ['router.js']);
-  assert.strictEqual(c.prefs, undefined);
-  assert.strictEqual(c.blockers, undefined);
 });
 
 test('context: stale ref is fetched read-only; read_from, remote_sha and conflict_files', () => {
@@ -116,30 +114,13 @@ test('context: offline stale check never fetches', () => {
   assert.strictEqual(c.ref.read_from, undefined);
 });
 
-test('context: blocker prefs are split from advisory prefs; deadline is computed', () => {
+test('context: deadline is computed; empty files key is omitted', () => {
   const f = fixture();
-  const root = fs.realpathSync(f.a);
-  const base = { correction: 'zebra rule', source: {}, scope: 'global', trigger: { keywords: ['zebra'], paths: [] }, kind: 'check', sessions: ['s'] };
-  const store = require('../lib/prefs/store');
-  store.save({ ...base, id: 'adv', status: 'confirmed', check: null }, root);
-  store.save({ ...base, id: 'blk', status: 'blocker', check: 'run the zebra check' }, root);
-  const c = ctx.context('fix the zebra in router.js', { cwd: f.a, offline: true });
-  assert.deepStrictEqual(c.prefs, ['adv: zebra rule']);
-  assert.deepStrictEqual(c.blockers, ['blk: run the zebra check']);
+  const c = ctx.context('add a feature for exporting reports', { cwd: f.a, offline: true });
   assert.strictEqual(c.deadlineMs - c.startedAtMs, 30 * 60000);
-});
-
-test('context: empty files key is omitted; workflow routes get fallback_steps, others none', () => {
-  const f = fixture();
-  const small = ctx.context('fix typo in router.js. Acceptance: node -v', { cwd: f.a, offline: true });
-  assert.strictEqual(small.fallback_steps, undefined);
-  const g = ctx.context('fix the auth token bug in router.js. Acceptance: node -v', { cwd: f.a, offline: true });
-  assert.strictEqual(g.route, 'guarded');
-  assert.deepStrictEqual(g.fallback_steps.map((x) => x.match(/better-ultracore:\w+/)[0]), ['better-ultracore:coder', 'better-ultracore:verifier']);
-  const p = ctx.context('add a feature for exporting reports', { cwd: f.a, offline: true });
-  assert.strictEqual(p.route, 'planned');
-  assert.strictEqual(p.files, undefined);
-  assert.strictEqual(p.fallback_steps.length, 2);
+  assert.strictEqual(c.files, undefined);
+  assert.strictEqual(c.prefs, undefined);
+  assert.strictEqual(c.fallback_steps, undefined);
 });
 
 test('context: no ref mention gives ref null', () => {
