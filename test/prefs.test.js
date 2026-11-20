@@ -33,3 +33,11 @@ test('import yields expected records and ignores tool_result', () => {
   assert.equal(byText(recs, /refresh/i).check, 'suggest browser test: reload page and verify state persisted');
   assert.ok(!recs.some((r) => /ignored tool output/.test(r.correction)));
 });
+
+test('fake secret never reaches the store file', () => {
+  const repo = setup();
+  importAll(repo);
+  const raw = fs.readFileSync(store.filesFor(repo).prefs, 'utf8');
+  assert.ok(!raw.includes('FAKE0000'));
+  assert.ok(!raw.includes('sk-test'));
+});
