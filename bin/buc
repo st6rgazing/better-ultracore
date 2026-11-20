@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { classify } = require('../lib/classify');
@@ -13,6 +14,7 @@ const { DEFAULT_LIMITS } = require('../lib/engine');
 const EXTERNAL = {
   prefs: path.join(__dirname, '..', 'lib', 'prefs', 'cli.js'),
   preflight: path.join(__dirname, '..', 'lib', 'preflight', 'cli.js'),
+  rules: path.join(__dirname, '..', 'lib', 'rules', 'cli.js'),
 };
 
 const KILL_GRACE_MS = 5000;
@@ -51,16 +53,25 @@ const commands = {
     const rerun = affected(steps, areas);
     console.log(JSON.stringify({ since: f.since || null, rerun, keep: steps.map((s) => s.id).filter((id) => !rerun.includes(id)) }));
   },
-  // buc scan-diff: secret scan of `git diff HEAD` plus untracked files. Prints rule/file/line only; exit 1 on findings.
-  'scan-diff'() {
-    // Untracked secret-store files (.env, keys) are expected to hold secrets: warn so they get ignored, don't fail.
-    const STORE = /(^|\/)\.env(\.[\w-]+)?$|\.(pem|key)$/;
-    const findings = require('../lib/preflight/secrets').scanWorkingTree(process.cwd());
-    const warn = findings.filter((f) => f.untracked && STORE.test(f.file));
-    const fail = findings.filter((f) => !warn.includes(f));
-    for (const f of fail) console.log(`${f.rule} ${f.file}:${f.line}`);
-    for (const file of new Set(warn.map((f) => f.file))) console.log(`warn ${file}: untracked secret file, not in .gitignore; add it to .gitignore, do not open or commit it`);
-    return fail.length ? 1 : 0;
+  // buc learn [--projects-root dir] [--dry-run]: collect corrective user turns for /buc learn clustering.
+  learn(argv) {
+    const f = parseFlags(argv);
+    const root = f['projects-root'] || path.join(os.homedir(), '.claude', 'projects');
+    const found = require('../lib/rules/mine').mine(root);
+    if (f['dry-run']) return void console.log(JSON.stringify(found));
+    const store = require('../lib/rules/store');
+    const known = new Set(store.readInbox().map((i) => i.text.toLowerCase()));
+    const fresh = found.filter((c) => !known.has(c.text.toLowerCase()));
+    store.appendInbox(fresh.map((c) => ({ ts: new Date().toISOString(), ...c })));
+    console.log(JSON.stringify({ candidates: found.length, appended: fresh.length }));
+  },
+  // buc check --session <id>: run the deterministic checks of the last turn's matched rules; exit 1 on failure.
+  check(argv) {
+    const f = parseFlags(argv);
+    if (!f.session) throw new Error('check needs --session <id>');
+    const results = require('../lib/rules/check').checkSession(f.session);
+    console.log(JSON.stringify(results));
+    return results.some((r) => !r.pass) ? 1 : 0;
   },
   // Wall clock enforced here: SIGTERM at the timeout, SIGKILL after a grace period.
   'run-headless'(argv) {
@@ -107,7 +118,7 @@ async function main(argv) {
   const [sub, ...rest] = argv;
   if (commands[sub]) return commands[sub](rest);
   if (EXTERNAL[sub] && fs.existsSync(EXTERNAL[sub])) return require(EXTERNAL[sub]).run(rest);
-  console.error('usage: buc classify|context|affected|scan-diff|run-headless|prefs|preflight [options]');
+  console.error('usage: buc classify|context|affected|learn|check|rules|run-headless|prefs|preflight [options]');
   process.exitCode = 2;
 }
 
