@@ -28,6 +28,9 @@ const table = [
   ['review the build script and tell me what is wrong', 'review'],
   ['inspect how passwords are stored and explain it', 'review'],
   ['review server.js and fix the cookie flags', 'small'],
+  ['Add a way to mark todos as done and show it in the list.', 'inline-plan'],
+  ['add a stats line to the summary output', 'inline-plan'],
+  ['edit a.js and b.js to share the helper', 'planned'],
   ['Add a retry to fetch.js. Do not commit secrets or tokens.', 'small'],
   ['fix the login auth bug. Never log passwords.', 'guarded'],
 ];
