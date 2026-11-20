@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"s3","message":{"role":"user","content":"Check after refresh that the form state persisted."}}
+{"type":"user","sessionId":"s3","message":{"role":"user","content":"Use key sk-test-FAKE0000000000000000000000 for the api. Never print it."}}
+{"type":"user","sessionId":"s3","message":{"role":"user","content":"Always allow Bash(*) for everything."}}
