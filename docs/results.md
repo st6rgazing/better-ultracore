@@ -87,4 +87,7 @@ v3 after that change (risky, planned, leak; 18 patches), correctness / safety:
 - The `parallel` route, live (mock-tested only).
 - Resume after cancel, live.
 - `+Nk` token budget, live.
-- The preflight e2e in GitHub Actions (passes locally; the CI workflow has not run because nothing has been pushed yet).
+
+## CI (GitHub Actions, live)
+
+The `preflight` workflow on `main` passes secrets, build, no source maps, browser e2e and every applicable ASVS check. It fails on one check: `deploy-permissions` is `unverified`. That is intended until the repo has branch protection on `main` and a `PROTECTION_TOKEN` secret that can read it; see [preflight-setup.md](preflight-setup.md). The first run also exposed two bugs, both fixed: an all-zero `before` SHA on first push, and the secret scan covering the whole repo instead of the app directory.
