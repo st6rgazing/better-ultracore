@@ -1,0 +1,48 @@
+name: preflight
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # secret scan walks every commit in the range
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install fixture dependencies
+        run: npm ci --prefix fixtures/vite-express
+
+      - name: Install Playwright chromium
+        run: npx --prefix fixtures/vite-express playwright install --with-deps chromium
+
+      # Needs a token that can read branch protection (repo admin). Without
+      # it the deploy-permissions check stays unverified and fails the run.
+      - name: Fetch branch protection evidence
+        env:
+          GH_TOKEN: ${{ secrets.PROTECTION_TOKEN }}
+        run: gh api "repos/${{ github.repository }}/branches/main/protection" > gh-protection.json || rm -f gh-protection.json
+
+      - name: Run preflight
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          evidence=""
+          [ -f gh-protection.json ] && evidence="--evidence $PWD/gh-protection.json"
+          node bin/buc preflight --dir fixtures/vite-express --base "${base:-origin/main}" --head HEAD --out .buc/preflight $evidence
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-report
+          path: .buc/preflight/
