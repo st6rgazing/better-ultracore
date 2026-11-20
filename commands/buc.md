@@ -17,7 +17,7 @@ Arguments: `$ARGUMENTS`. The first word picks the mode.
 4. `small`: make the edit yourself (no Agent, no Workflow), run `checkCmd` once, at most 2 repairs, stop on a repeated error.
 5. `inline-plan`: state 2-3 assumed acceptance bullets in one line, then edit inline and run `checkCmd`. No Agent, no Workflow.
 6. After an edit on `small` or `inline-plan`, run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc scan-diff`. On exit 1, fix the listed rule/file/line findings before finishing. For a `warn` line, add that file to .gitignore without opening it, and say so in one line.
-7. `review`: one Agent call, `subagent_type: better-ultracore:reviewer-ro`. Do not edit files.
+7. `review`: one Agent call, `subagent_type: better-ultracore:reviewer-ro`. Do not edit files. Questions with no change verb are answered read-only.
 8. `planned`, `guarded`, `parallel`: call the Workflow tool with name `better-ultracore:buc-flow` and the context JSON as args. If it is refused or unavailable, follow `fallback_steps`. Report the result status, launches and repairs used, and the `limits_report`. If status is `needs_user`, ask the questions. If `partial`, list completed steps and what is left.
 
 ### Workflow routes only (planned, guarded, parallel)
