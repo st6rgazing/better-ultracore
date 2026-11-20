@@ -9,16 +9,16 @@ const OUT = path.join(ROOT, 'workflows', 'buc-flow.js');
 
 const HEADER = `export const meta = {
   name: 'buc-flow',
-  description: 'better-ultracore: task-sized run with hard launch/repair limits',
-  whenToUse: 'Multi-step, risky, parallel or review tasks that need routing, a launch/repair budget and a fresh verification. Not for few-line edits.',
-  phases: [{ title: 'Route' }, { title: 'Work' }, { title: 'Verify' }],
+  description: 'better-ultracore: parallel worker fan-out and an optional read-only critic, with hard launch limits',
+  whenToUse: 'A task with two or more numbered parts on disjoint files (parallel workers), or /buc deep (one read-only critic on the diff). Not for single edits.',
+  phases: [{ title: 'Work' }, { title: 'Critic' }],
 };
 `;
 
 const ADAPTER = `
 const engine = createEngine({ agent, parallel, log, budget });
 const res = await engine.run(args || {});
-log(\`buc route=\${res.route} status=\${res.status} launches=\${res.launches} repairs=\${res.repairs}\`);
+log(\`buc status=\${res.status} launches=\${res.launches}\`);
 return res;
 `;
 
