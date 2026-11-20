@@ -28,6 +28,8 @@ const table = [
   ['review the build script and tell me what is wrong', 'review'],
   ['inspect how passwords are stored and explain it', 'review'],
   ['review server.js and fix the cookie flags', 'small'],
+  ['Add a retry to fetch.js. Do not commit secrets or tokens.', 'small'],
+  ['fix the login auth bug. Never log passwords.', 'guarded'],
 ];
 
 for (const [req, route] of table) {
