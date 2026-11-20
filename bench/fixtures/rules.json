@@ -1,0 +1,253 @@
+[
+  {
+    "id": "verify-it-runs",
+    "rule": "Before saying done, run the changed feature and its neighbouring pages or flows; never report success on code you did not execute.",
+    "when": {
+      "keywords": [
+        "page",
+        "route",
+        "button",
+        "flow",
+        "login"
+      ],
+      "paths": [],
+      "promptKinds": [
+        "edit"
+      ]
+    },
+    "check": {
+      "cmd": "check-cmd",
+      "question": "Did I execute the changed path and one adjacent path?"
+    },
+    "kind": "process",
+    "count": 12,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "ui-less-is-more",
+    "rule": "Keep UI simple: minimal visible text, fewer borders and elements, secondary content collapsible; never lose functionality while simplifying.",
+    "when": {
+      "keywords": [
+        "ui",
+        "screen",
+        "tutorial",
+        "simplify",
+        "menu"
+      ],
+      "paths": [
+        "*.jsx",
+        "*.tsx",
+        "*.css",
+        "*.html"
+      ],
+      "promptKinds": []
+    },
+    "check": {
+      "question": "Did I add any element or text the request did not ask for?"
+    },
+    "kind": "ui",
+    "count": 9,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "advice-means-no-edits",
+    "rule": "When asked to tell, show, suggest or explain, answer in text only and change no files.",
+    "when": {
+      "keywords": [
+        "tell",
+        "suggest",
+        "tips",
+        "explain"
+      ],
+      "paths": [],
+      "promptKinds": [
+        "advice"
+      ]
+    },
+    "check": {
+      "cmd": "advice-no-edits"
+    },
+    "kind": "process",
+    "count": 8,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "only-what-was-asked",
+    "rule": "Do exactly the named items with the smallest diff; leave existing code and unrelated files untouched.",
+    "when": {
+      "keywords": [
+        "only",
+        "just",
+        "minimal",
+        "unchanged"
+      ],
+      "paths": [],
+      "promptKinds": []
+    },
+    "check": {
+      "cmd": "only-named-files"
+    },
+    "kind": "code",
+    "count": 10,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "no-ai-traces",
+    "rule": "No AI attribution or AI-sounding text: no Co-Authored-By or generator lines in commits, files or copy.",
+    "when": {
+      "keywords": [
+        "commit",
+        "readme",
+        "description"
+      ],
+      "paths": [],
+      "promptKinds": [
+        "commit"
+      ]
+    },
+    "check": {
+      "cmd": "no-ai-traces"
+    },
+    "kind": "git",
+    "count": 6,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "small-commits",
+    "rule": "Commit after each small completed feature or fix, one logical change per commit, so rollback is easy.",
+    "when": {
+      "keywords": [
+        "commit"
+      ],
+      "paths": [],
+      "promptKinds": [
+        "commit"
+      ]
+    },
+    "check": {
+      "cmd": "small-commits"
+    },
+    "kind": "git",
+    "count": 7,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "smallest-step-on-degree",
+    "rule": "For degree requests (slightly, a little, smaller, more) make one small step; never swing to the opposite extreme.",
+    "when": {
+      "keywords": [
+        "slightly",
+        "little",
+        "smaller",
+        "bigger",
+        "softer"
+      ],
+      "paths": [],
+      "promptKinds": []
+    },
+    "check": {
+      "question": "Is each changed number within about 25% of its previous value?"
+    },
+    "kind": "ui",
+    "count": 5,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "exact-specific-copy",
+    "rule": "Use the replacement text verbatim; error messages must state the specific cause, not a generic failure.",
+    "when": {
+      "keywords": [
+        "copy",
+        "text",
+        "message",
+        "label",
+        "error"
+      ],
+      "paths": [],
+      "promptKinds": []
+    },
+    "check": {
+      "cmd": "exact-copy"
+    },
+    "kind": "ui",
+    "count": 6,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "no-implicit-state",
+    "rule": "No automatic carry-over or auto-start: reset per-round state and require an explicit user action to continue.",
+    "when": {
+      "keywords": [
+        "round",
+        "hints",
+        "lobby",
+        "restart",
+        "persist",
+        "reset",
+        "state"
+      ],
+      "paths": [],
+      "promptKinds": []
+    },
+    "check": {
+      "question": "After a round ends, is all per-round state cleared and does nothing start by itself?"
+    },
+    "kind": "code",
+    "count": 7,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "icons-not-emoji",
+    "rule": "Never use emoji in UI or output; use the project icon library (lucide) or plain symbols for buttons.",
+    "when": {
+      "keywords": [
+        "icon",
+        "icons",
+        "emoji",
+        "button",
+        "buttons"
+      ],
+      "paths": [
+        "*.jsx",
+        "*.tsx"
+      ],
+      "promptKinds": []
+    },
+    "check": {
+      "cmd": "no-emoji"
+    },
+    "kind": "ui",
+    "count": 6,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  },
+  {
+    "id": "terse-replies",
+    "rule": "Reply tersely: result first, no preamble, no recap of unchanged things.",
+    "when": {
+      "keywords": [],
+      "paths": [],
+      "promptKinds": [
+        "advice",
+        "edit",
+        "commit"
+      ]
+    },
+    "check": {
+      "question": "Is the final message under 120 words with the outcome first?"
+    },
+    "kind": "communication",
+    "count": 5,
+    "last_seen": "2026-11-01T00:00:00.000Z",
+    "pinned": false
+  }
+]
