@@ -115,6 +115,8 @@ function liveRun(c, arm, rep, o) {
     if (typeof last.result === 'string' && last.result.trim().endsWith('?')) interventions += 1;
     const sum = (f) => runs.reduce((n, r) => n + (f(r) || 0), 0);
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
+    // Final reply lands outside the repo so read-only cases can be accepted on what was said.
+    fs.writeFileSync(path.join(parent, 'result.txt'), typeof last.result === 'string' ? last.result : '');
     const accept = sh(path.join(CASES_DIR, c, 'accept.sh'), dir).status === 0;
     const diff = patchOf(dir, preUntracked);
     return {
