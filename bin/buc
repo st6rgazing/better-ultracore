@@ -1,0 +1,44 @@
+#!/usr/bin/env node
+'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const { context } = require('../lib/context');
+
+// DISPATCH HOOK: subcommands implemented by other modules, each exporting run(argv).
+// Guarded by an existence check so buc still works when a module is absent.
+const EXTERNAL = {
+  prefs: path.join(__dirname, '..', 'lib', 'prefs', 'cli.js'),
+  preflight: path.join(__dirname, '..', 'lib', 'preflight', 'cli.js'),
+};
+
+const BOOLEAN = new Set(['offline']);
+
+function parseFlags(argv) {
+  const flags = {};
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i].replace(/^--/, '');
+    flags[key] = BOOLEAN.has(key) ? true : argv[++i];
+  }
+  return flags;
+}
+
+const commands = {
+  context(argv) {
+    const f = parseFlags(argv);
+    if (!f.request) throw new Error('context needs --request "<text>"');
+    console.log(JSON.stringify(context(f.request, { ref: f.ref, offline: f.offline })));
+  },
+};
+
+async function main(argv) {
+  const [sub, ...rest] = argv;
+  if (commands[sub]) return commands[sub](rest);
+  if (EXTERNAL[sub] && fs.existsSync(EXTERNAL[sub])) return require(EXTERNAL[sub]).run(rest);
+  console.error('usage: buc classify|context|affected|run-headless|prefs|preflight [options]');
+  process.exitCode = 2;
+}
+
+main(process.argv.slice(2)).catch((e) => {
+  console.error(e.message);
+  process.exitCode = 1;
+});
