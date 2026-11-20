@@ -195,3 +195,17 @@ test('maxLaunches caps total agent calls', async () => {
   assert.strictEqual(h.calls.length, 2);
   assert.strictEqual(r.launches, 2);
 });
+
+test('workflows/buc.js is not stale', () => {
+  const { execFileSync } = require('node:child_process');
+  execFileSync('node', [require('node:path').join(__dirname, '..', 'scripts', 'build-workflow.js'), '--check'], { stdio: 'pipe' });
+});
+
+test('generated workflow runs as an async function body', async () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'workflows', 'buc.js'), 'utf8')
+    .replace(/export const meta = \{[\s\S]*?\n\};\n/, '');
+  const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+  const fn = new AsyncFunction('agent', 'parallel', 'log', 'budget', 'args', src);
+  const r = await fn(async () => ok(), null, () => {}, undefined, { request: 'x', route: 'small' });
+  assert.strictEqual(r.status, 'done');
+});
