@@ -1,0 +1,1 @@
+Rename function fooA in src/a.js to alpha and fooB in src/b.js to beta, update callers in index.js. Acceptance: node index.js prints alpha beta
