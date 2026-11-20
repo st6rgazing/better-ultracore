@@ -120,11 +120,11 @@ function ultraActive(dir) {
   return walk(proj);
 }
 
-// The run's patch against the fixture's first commit, untracked files included.
+// The run's patch against HEAD as setup.sh left it, untracked files included.
 // Files left untracked by setup.sh (e.g. a fixture .env) are not part of the run's patch.
-function patchOf(dir, preUntracked = []) {
+function patchOf(dir, preUntracked = [], base) {
   const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '';
-  const root = git('rev-list', '--max-parents=0', 'HEAD').trim().split('\n')[0];
+  const root = base || git('rev-list', '--max-parents=0', 'HEAD').trim().split('\n')[0];
   const fresh = git('ls-files', '--others', '--exclude-standard', '-z').split('\0').filter((f) => f && !preUntracked.includes(f));
   if (fresh.length) git('add', '-N', '--', ...fresh);
   const stat = git('diff', '--numstat', root).trim().split('\n').filter(Boolean)
@@ -158,6 +158,7 @@ function liveRun(c, arm, rep, o) {
       if (o.bucHome) fs.cpSync(o.bucHome, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
     }
     const prompt = read(c, 'prompt.txt');
+    const base = (spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim();
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
     const call = (p, extra = {}) => claudeCall(p, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env, ...extra });
     const runs = [];
@@ -186,7 +187,7 @@ function liveRun(c, arm, rep, o) {
     const last = runs[runs.length - 1];
     const sum = (f) => runs.reduce((n, r) => n + (f(r) || 0), 0);
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
-    const diff = patchOf(dir, preUntracked);
+    const diff = patchOf(dir, preUntracked, base);
     return {
       case: c, arm, rep,
       accept_pass: sim.final_pass,
