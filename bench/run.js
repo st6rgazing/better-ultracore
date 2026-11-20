@@ -128,7 +128,8 @@ function liveRun(c, arm, rep, o) {
       runs.push(headless(prompt, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env }));
     }
     const last = runs[runs.length - 1];
-    if (typeof last.result === 'string' && last.result.trim().endsWith('?')) interventions += 1;
+    // A run that stops to ask the user (a question near the end, or an explicit "which do you mean") needs a human.
+    if (typeof last.result === 'string' && (/\?\s*$/.test(last.result.trim()) || /\b(which (of these|one) do you (mean|want)|do you want me to|should i)\b[^.]*\?/i.test(last.result))) interventions += 1;
     const sum = (f) => runs.reduce((n, r) => n + (f(r) || 0), 0);
     const tok = runs.map((r) => sumTokens(r.model_usage, r.usage));
     // Final reply lands outside the repo so read-only cases can be accepted on what was said.
