@@ -1,7 +1,7 @@
 {
   "name": "better-ultracore",
-  "version": "0.1.0",
-  "description": "Task-sized orchestration for Claude Code: right-sized routing, hard launch/repair limits, learned preferences, and a CI release preflight.",
+  "version": "0.2.0",
+  "description": "Learned rules injected per prompt, a Stop-hook check with one revision, parallel workers and a deep critic on demand, and a CI release preflight.",
   "license": "MIT",
   "keywords": [
     "workflow",
