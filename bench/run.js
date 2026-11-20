@@ -85,6 +85,7 @@ function liveRun(c, arm, rep, o) {
       num_turns: sum((r) => r.num_turns),
       subagents: sum((r) => r.subagent_stats && r.subagent_stats.spawned),
       interventions,
+      result_excerpt: typeof last.result === "string" ? last.result.slice(0, 600) : null,
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
