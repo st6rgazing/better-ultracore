@@ -15,7 +15,7 @@ test('fires on the risky case as one short line', () => {
 });
 
 test('silent on every other bench prompt', () => {
-  for (const n of fs.readdirSync(cases)) {
+  for (const n of fs.readdirSync(cases).filter((d) => fs.existsSync(path.join(cases, d, 'prompt.txt')))) {
     if (n === 'risky') continue;
     assert.strictEqual(probeLine(prompt(n)), '', n);
   }
