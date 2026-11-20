@@ -31,6 +31,11 @@ const table = [
   ['Add a way to mark todos as done and show it in the list.', 'inline-plan'],
   ['add a stats line to the summary output', 'inline-plan'],
   ['edit a.js and b.js to share the helper', 'planned'],
+  ['Fix greet.js so greet(name) returns "Hello, <name>!" (for example greet("Ana") returns "Hello, Ana!"). Acceptance: node test.js prints ok', 'small'],
+  ['Rename function fooA in src/a.js to alpha and fooB in src/b.js to beta, update callers in index.js. Acceptance: node index.js prints alpha beta', 'small'],
+  ['Add a STRIPE key setting to config.js read from process.env.STRIPE_KEY, and a note in README. Do not commit secrets.', 'small'],
+  ['Users report the save button says Saved even when saving fails. Fix it so failures show an error. Acceptance: node test.js', 'small'],
+  ['Look at main and tell me the current version in VERSION; write it into answer.txt.', 'inline-plan'],
   ['Add a retry to fetch.js. Do not commit secrets or tokens.', 'small'],
   ['fix the login auth bug. Never log passwords.', 'guarded'],
 ];
