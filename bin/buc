@@ -6,6 +6,7 @@ const { spawn } = require('node:child_process');
 const { classify } = require('../lib/classify');
 const { context, affected } = require('../lib/context');
 const { readRequest } = require('../lib/request');
+const { DEFAULT_LIMITS } = require('../lib/engine');
 
 // DISPATCH HOOK: subcommands implemented by other modules, each exporting run(argv).
 // Guarded by an existence check so buc still works when a module is absent.
@@ -66,11 +67,12 @@ const commands = {
     const f = parseFlags(argv);
     const prompt = f.prompt || readRequest(f);
     if (!prompt) throw new Error('run-headless needs --prompt "<text>" or --request-file <path|->');
-    const args = ['-p', prompt, '--output-format', 'json', '--plugin-dir', f['plugin-dir'] || '.',
+    const args = ['-p', prompt, '--output-format', 'json', '--plugin-dir', f['plugin-dir'] || path.join(__dirname, '..'),
       '--model', f.model || 'sonnet', '--max-budget-usd', f['max-budget-usd'] || '1',
       '--permission-mode', f['permission-mode'] || 'acceptEdits'];
     if (f['allowed-tools']) args.push('--allowedTools', ...f['allowed-tools'].split(','));
     if (f['no-plugin']) args.splice(args.indexOf('--plugin-dir'), 2);
+    const timeoutMin = parseFloat(f['timeout-min'] || DEFAULT_LIMITS.maxElapsedMin);
     const started = Date.now();
     const child = spawn(CLAUDE, args, { cwd: f.cwd || process.cwd(), stdio: ['ignore', 'pipe', 'inherit'], detached: true });
     let out = '';
@@ -80,7 +82,7 @@ const commands = {
       timedOut = true;
       process.kill(-child.pid, 'SIGTERM');
       setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } }, KILL_GRACE_MS).unref();
-    }, parseFloat(f['timeout-min'] || '15') * 60000);
+    }, timeoutMin * 60000);
     child.on('close', (code, signal) => {
       clearTimeout(term);
       let r = {};
@@ -88,6 +90,7 @@ const commands = {
       console.log(JSON.stringify({
         exit: code ?? signal,
         timed_out: timedOut,
+        timeout_min: timeoutMin,
         elapsed_ms: Date.now() - started,
         total_cost_usd: r.total_cost_usd ?? null,
         usage: r.usage ?? null,

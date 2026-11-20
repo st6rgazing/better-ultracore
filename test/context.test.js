@@ -194,6 +194,14 @@ test('run-headless kills on wall-clock timeout', () => {
   assert.ok(r.elapsed_ms < 10000);
 });
 
+test('run-headless defaults to 30 min timeout and the plugin root as plugin-dir', () => {
+  const r = headless(fakeClaude(`node -e 'console.log(JSON.stringify({result: JSON.stringify(process.argv.slice(1))}))' -- "$@"`));
+  const args = JSON.parse(r.result);
+  assert.strictEqual(r.timeout_min, 30);
+  assert.strictEqual(args[args.indexOf('--plugin-dir') + 1], path.join(__dirname, '..'));
+  assert.strictEqual(headless(fakeClaude('echo {}'), '--timeout-min', '2').timeout_min, 2);
+});
+
 test('checkCmd takes the command named in the request', () => {
   const { checkCmd } = require('../lib/context');
   assert.strictEqual(checkCmd('/nonexistent', 'Fix it. Acceptance: node test.js prints ok.'), 'node test.js');
