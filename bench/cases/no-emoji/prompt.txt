@@ -1,0 +1,1 @@
+add icons to the buttons in the toolbar
