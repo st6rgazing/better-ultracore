@@ -83,14 +83,26 @@ test('stop-check blocks once, never when stop_hook_active, and counts the violat
   const home = tmp('buc-home-');
   seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
   hook('inject.js', { prompt: 'tell me what this does', cwd: dir, session_id: 's4' }, home);
+  const turnFile = path.join(home, 'turn-s4.json');
   assert.strictEqual(hook('stop-check.js', { session_id: 's4', cwd: dir }, home), null);
+  assert.ok(!fs.existsSync(turnFile), 'turn file removed after a passing stop');
+  hook('inject.js', { prompt: 'tell me what this does', cwd: dir, session_id: 's4' }, home);
   fs.writeFileSync(path.join(dir, 'app.js'), 'edited\n');
-  assert.strictEqual(hook('stop-check.js', { session_id: 's4', cwd: dir, stop_hook_active: true }, home), null);
   const out = hook('stop-check.js', { session_id: 's4', cwd: dir }, home);
   assert.strictEqual(out.decision, 'block');
   assert.match(out.reason, /^Fix before finishing: advice-no-edits: .*app\.js/);
   assert.ok(out.reason.length <= 600);
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(home, 'rules.json'), 'utf8'))[0].violations, 1);
+  assert.strictEqual(hook('stop-check.js', { session_id: 's4', cwd: dir, stop_hook_active: true }, home), null);
+  assert.ok(!fs.existsSync(turnFile), 'turn file removed after the one block');
+});
+
+test('inject stores a redacted prompt in the turn file', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seed(home, [rule('advice-means-no-edits', { promptKinds: ['advice'] }, { cmd: 'advice-no-edits' })]);
+  hook('inject.js', { prompt: 'tell me what this does, token=abc123secretvalue', cwd: dir, session_id: 's4d' }, home);
+  assert.ok(!fs.readFileSync(path.join(home, 'turn-s4d.json'), 'utf8').includes('abc123secretvalue'));
 });
 
 test('a prompt with nothing to check drops the previous turn file', () => {

@@ -4,6 +4,7 @@ const { execFileSync } = require('node:child_process');
 const { mentionedRef } = require('../lib/context');
 const { configuredCmd } = require('../lib/rules/check');
 const { retrieve } = require('../lib/rules/retrieve');
+const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -32,7 +33,7 @@ function run(input) {
     if (sessionId && !checked.length) store.clearTurn(sessionId);
     if (sessionId && checked.length) {
       store.writeTurn(sessionId, {
-        session_id: sessionId, cwd, root: root.trim(), prompt, kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
+        session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
         porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
         rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks: checked.map((r) => r.check.cmd),
       });
