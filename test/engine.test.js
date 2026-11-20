@@ -66,9 +66,10 @@ test('repair succeeds', async () => {
   assert.deepStrictEqual(r.completed_steps.map((s) => s.id), ['code', 'code:repair1']);
 });
 
-test('unknown route returns failed result, never empty', async () => {
+test('unknown route asks haiku; if every agent stalls the result is partial, never empty', async () => {
   const r = await harness([]).engine.run({ request: 'x', route: 'nope' });
-  assert.strictEqual(r.status, 'failed');
+  assert.strictEqual(r.status, 'partial');
+  assert.ok(r.limits_report.length);
 });
 
 const plan = (over = {}) => ({ steps: ['s1'], files: ['a.js'], questions_needing_user: [], acceptance: ['works'], ...over });
@@ -208,4 +209,13 @@ test('generated workflow runs as an async function body', async () => {
   const fn = new AsyncFunction('agent', 'parallel', 'log', 'budget', 'args', src);
   const r = await fn(async () => ok(), null, () => {}, undefined, { request: 'x', route: 'small' });
   assert.strictEqual(r.status, 'done');
+});
+
+test('raw string args (slash-invoked workflow) get routed by haiku, never "unknown route"', async () => {
+  const h = harness([{ route: 'small' }, ok()]);
+  const r = await h.engine.run('run In greet.js add a comma');
+  assert.strictEqual(r.route, 'small');
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(h.calls[0].model, 'haiku');
+  assert.match(h.calls[1].prompt, /greet\.js add a comma/);
 });

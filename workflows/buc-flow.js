@@ -280,10 +280,12 @@ function createEngine(deps) {
     },
   };
 
-  async function run(ctx) {
+  async function run(input) {
+    // Raw text (e.g. the workflow invoked by slash command) has no precomputed route: let haiku pick.
+    const ctx = typeof input === 'string' ? { request: input } : input;
     limits = { ...DEFAULT_LIMITS, ...ctx.limits };
     let route = ctx.route;
-    if (ctx.confidence === 'uncertain') {
+    if (ctx.confidence === 'uncertain' || !ROUTES.includes(route)) {
       const c = await launch('route', {
         prompt: brief(ctx, `Pick the best route (${ROUTES.join('|')}). small: concrete few-line change. planned: vague or multi-step. guarded: risky (auth, payments, migrations). parallel: independent parts. review: read-only.`),
         model: 'haiku',
