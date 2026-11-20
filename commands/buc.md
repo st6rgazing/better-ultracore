@@ -18,6 +18,7 @@ Arguments: `$ARGUMENTS`. The first word picks the mode.
 5. Route `review`: one Agent call with `subagent_type: better-ultracore:reviewer-ro` (read-only tools). Do not edit files.
 6. Routes `planned`, `guarded`, `parallel`: call the Workflow tool with name `better-ultracore:buc-flow` and the context JSON as args. If the Workflow tool is refused or unavailable, run the same route by hand: one `better-ultracore:planner` Agent call, then one `better-ultracore:coder` call, then (guarded) one `better-ultracore:verifier` call given the original request, `git diff <base>`, and a fresh check run.
 7. Correction mid-run: stop the workflow with TaskStop, run `node ${CLAUDE_PLUGIN_ROOT}/bin/buc affected --steps <result.json> --files <a,b>`, then resume the workflow with `resumeFromRunId` so unaffected steps replay from the checkpoint. Put the correction in the next brief, not as a live message to workers.
+   For `planned`, `guarded` and `parallel`, if the user wants a hard time limit, run the whole task through `node ${CLAUDE_PLUGIN_ROOT}/bin/buc run-headless --timeout-min N --request-file - <<'BUC_TASK'` (task, then `BUC_TASK`) instead; elapsed time is enforced only there. `context.blockers` are required checks: report each one as passed or not verified.
 8. Report the result status, launches/repairs used, and the `limits_report` table (enforced vs advisory). If status is `needs_user`, ask the questions. If `partial`, list completed steps and what is left.
 
 ## preflight [opts]

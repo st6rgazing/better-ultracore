@@ -53,8 +53,9 @@ const commands = {
   // Wall clock enforced here: SIGTERM at the timeout, SIGKILL after a grace period.
   'run-headless'(argv) {
     const f = parseFlags(argv);
-    if (!f.prompt) throw new Error('run-headless needs --prompt "<text>"');
-    const args = ['-p', f.prompt, '--output-format', 'json', '--plugin-dir', f['plugin-dir'] || '.',
+    const prompt = f.prompt || readRequest(f);
+    if (!prompt) throw new Error('run-headless needs --prompt "<text>" or --request-file <path|->');
+    const args = ['-p', prompt, '--output-format', 'json', '--plugin-dir', f['plugin-dir'] || '.',
       '--model', f.model || 'sonnet', '--max-budget-usd', f['max-budget-usd'] || '1',
       '--permission-mode', f['permission-mode'] || 'acceptEdits'];
     if (f['allowed-tools']) args.push('--allowedTools', ...f['allowed-tools'].split(','));
