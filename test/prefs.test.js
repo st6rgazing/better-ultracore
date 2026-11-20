@@ -79,3 +79,12 @@ test('retrieve picks only relevant records, at most five', () => {
   }
   assert.equal(retrieve({ request: 'zebra', repoRoot: repo }).records.length, 5);
 });
+
+test('confirmed project outranks confirmed global outranks suggested', () => {
+  const repo = setup();
+  const base = { correction: 'c', source: {}, trigger: { keywords: ['zebra'], paths: [] }, check: null, kind: 'instruction', sessions: ['s'] };
+  store.save({ ...base, id: 'sug', status: 'suggested', scope: 'global' }, repo);
+  store.save({ ...base, id: 'glo', status: 'confirmed', scope: 'global' }, repo);
+  store.save({ ...base, id: 'prj', status: 'confirmed', scope: `project:${repo}` }, repo);
+  assert.deepEqual(retrieve({ request: 'zebra', repoRoot: repo }).records.map((r) => r.id), ['prj', 'glo', 'sug']);
+});
