@@ -34,3 +34,33 @@ config to make them non-blocking. Config paths resolve relative to `--dir`.
 
 Test existence is evidence, not proof: the tool does not run those tests (the
 browser check does).
+
+## What needs setup outside the tool
+
+The tool can only report these as `unverified` until you supply evidence.
+
+- Branch protection and required reviews: produce evidence with
+  `gh api repos/OWNER/REPO/branches/main/protection > gh-protection.json`
+  (needs a token with repo admin) and pass `--evidence gh-protection.json`.
+  It passes only when required reviews and required status checks are present.
+- Required status check: mark the `preflight` job as required in branch protection.
+- Environments with required reviewers for the production deploy job.
+- OIDC deploy credentials at the cloud or hosting provider, and CODEOWNERS for
+  workflows and server code.
+- A `/__version` endpoint returning `{sha, artifact_sha256}` on the host.
+- Authentication (V2): add a test file and set `test` on the `auth` item.
+
+See `examples/promote.yml` and `.github/workflows/preflight.yml`.
+
+## Browser regression fixture
+
+```
+npm --prefix fixtures/vite-express install
+npm --prefix fixtures/vite-express run e2e                 # passes
+VITE_LYING_UI=1 npm --prefix fixtures/vite-express run e2e # must fail
+```
+
+With `VITE_LYING_UI=1` the UI shows "Saved" after a failed backend call, and
+the "backend failure shows an error and not Saved" test fails.
+
+Fast tests (no browser): `npm test`.
