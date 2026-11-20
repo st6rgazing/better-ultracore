@@ -36,6 +36,7 @@ const table = [
   ['Add a STRIPE key setting to config.js read from process.env.STRIPE_KEY, and a note in README. Do not commit secrets.', 'small'],
   ['Users report the save button says Saved even when saving fails. Fix it so failures show an error. Acceptance: node test.js', 'small'],
   ['Look at main and tell me the current version in VERSION; write it into answer.txt.', 'inline-plan'],
+  ['Change password hashing in auth.js from md5 to scrypt with a random salt; verifyPassword must still work. Acceptance: node test.js', 'guarded'],
   ['Add a retry to fetch.js. Do not commit secrets or tokens.', 'small'],
   ['fix the login auth bug. Never log passwords.', 'guarded'],
 ];

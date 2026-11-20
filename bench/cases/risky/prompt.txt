@@ -1,0 +1,1 @@
+Change password hashing in auth.js from md5 to scrypt with a random salt; verifyPassword must still work. Acceptance: node test.js
