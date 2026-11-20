@@ -130,3 +130,12 @@ test('guarded: verifier still runs when launches are otherwise used up', async (
   assert.strictEqual(r.status, 'done');
   assert.strictEqual(r.launches, 3);
 });
+
+test('review: reviewer-ro only, no coder', async () => {
+  const h = harness([{ summary: 'fine', findings: [] }]);
+  const r = await h.engine.run({ request: 'review x', route: 'review' });
+  assert.strictEqual(r.status, 'done');
+  assert.strictEqual(h.calls.length, 1);
+  assert.strictEqual(h.calls[0].agentType, 'better-ultracore:reviewer-ro');
+  assert.strictEqual(r.last_check, null);
+});
