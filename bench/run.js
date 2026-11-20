@@ -243,6 +243,7 @@ function main(argv) {
   const cases = f.cases ? f.cases.split(',') : all;
   for (const c of cases) if (!all.includes(c)) throw new Error(`unknown case: ${c}`);
   if (f.dry) {
+    console.log(`arms: ${Object.keys(ARMS).join(', ')}`);
     const res = cases.map(dryRun);
     for (const r of res) console.log(`${r.case}: unsolved fails=${r.unsolved_fails} solved passes=${r.solved_passes}`);
     process.exitCode = res.every((r) => r.unsolved_fails && r.solved_passes) ? 0 : 1;
@@ -263,5 +264,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases };
 if (require.main === module) main(process.argv.slice(2));
