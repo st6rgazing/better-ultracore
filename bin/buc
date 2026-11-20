@@ -16,7 +16,7 @@ const EXTERNAL = {
 const KILL_GRACE_MS = 5000;
 const CLAUDE = process.env.BUC_CLAUDE_BIN || 'claude';
 
-const BOOLEAN = new Set(['offline']);
+const BOOLEAN = new Set(['no-plugin', 'offline']);
 
 function parseFlags(argv) {
   const flags = {};
@@ -53,7 +53,10 @@ const commands = {
     const f = parseFlags(argv);
     if (!f.prompt) throw new Error('run-headless needs --prompt "<text>"');
     const args = ['-p', f.prompt, '--output-format', 'json', '--plugin-dir', f['plugin-dir'] || '.',
-      '--model', f.model || 'sonnet', '--max-budget-usd', f['max-budget-usd'] || '1'];
+      '--model', f.model || 'sonnet', '--max-budget-usd', f['max-budget-usd'] || '1',
+      '--permission-mode', f['permission-mode'] || 'acceptEdits'];
+    if (f['allowed-tools']) args.push('--allowedTools', ...f['allowed-tools'].split(','));
+    if (f['no-plugin']) args.splice(args.indexOf('--plugin-dir'), 2);
     const started = Date.now();
     const child = spawn(CLAUDE, args, { cwd: f.cwd || process.cwd(), stdio: ['ignore', 'pipe', 'inherit'], detached: true });
     let out = '';
@@ -75,7 +78,8 @@ const commands = {
         total_cost_usd: r.total_cost_usd ?? null,
         usage: r.usage ?? null,
         num_turns: r.num_turns ?? null,
-        subagent_stats: r.subagent_stats ?? r.modelUsage ?? null,
+        subagent_stats: r.subagent_stats ?? null,
+        model_usage: r.modelUsage ?? null,
         result: r.result ?? null,
       }));
     });
