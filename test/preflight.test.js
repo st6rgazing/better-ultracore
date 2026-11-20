@@ -93,3 +93,26 @@ test('bin/buc preflight propagates a failing exit code (CI gate)', () => {
     '--skip-build', '--skip-browser', '--out', path.join(dir, 'out')], { encoding: 'utf8' });
   assert.strictEqual(r.status, 1);
 });
+
+test('secrets scan runs after build so a built, gitignored dist map is scanned', () => {
+  const d = tmp();
+  const git = (...a) => execFileSync('git', a, { cwd: d });
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 't');
+  fs.writeFileSync(path.join(d, '.gitignore'), 'dist/\n');
+  fs.writeFileSync(path.join(d, 'app.js'), 'console.log(1);\n');
+  git('add', '.');
+  git('commit', '-qm', 'init');
+  fs.writeFileSync(path.join(d, 'mkdist.js'), `const fs=require('fs');fs.mkdirSync('dist');fs.writeFileSync('dist/a.js.map',JSON.stringify({sources:['s.js'],sourcesContent:['const k="${FAKE_AWS}";']}));\n`);
+  fs.writeFileSync(path.join(d, 'buc.preflight.json'), JSON.stringify({ build: { cmd: 'node mkdist.js' }, required: { browser: false } }));
+  buc(d, ['--skip-browser']);
+  assert.strictEqual(checkOf(d, 'secrets').status, 'failed');
+});
+
+test('secrets is unverified when dist is required but missing', () => {
+  const d = cleanRepo({ secrets: { requireDist: true } });
+  fs.rmSync(path.join(d, 'dist'), { recursive: true });
+  buc(d, SKIP);
+  assert.strictEqual(checkOf(d, 'secrets').status, 'unverified');
+});
