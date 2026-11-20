@@ -2,7 +2,7 @@
 // UserPromptSubmit: inject matched rules, a stale-ref note and the check command. Offline, no model call.
 const { execFileSync } = require('node:child_process');
 const { mentionedRef } = require('../lib/context');
-const { configuredCmd } = require('../lib/rules/check');
+const { configuredCmd, typecheckCmd } = require('../lib/rules/check');
 const path = require('node:path');
 const { retrieve, render } = require('../lib/rules/retrieve');
 const { redact } = require('../lib/prefs/redact');
@@ -68,18 +68,21 @@ function run(input) {
     const cmd = configuredCmd(root.trim());
     if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
   }
+  const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
+  if (tc) fixed.push(`Verify with ${tc} (the repo script, not npx) and report what you ran; if it is blocked, say so once.`);
   fixed.push(correctionLine(prompt, hadPrev) || intentLine(prompt, { kind }), probeLine(prompt));
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
   if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
   if (sessionId && !root) store.clearTurn(sessionId);
   if (root) {
     const checked = matched.filter((r) => r.check.cmd);
-    if (sessionId && !checked.length) store.clearTurn(sessionId);
-    if (sessionId && checked.length) {
+    const checks = [...checked.map((r) => r.check.cmd), ...(tc ? ['typecheck'] : [])];
+    if (sessionId && !checks.length) store.clearTurn(sessionId);
+    if (sessionId && checks.length) {
       store.writeTurn(sessionId, {
         session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
         porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
-        rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks: checked.map((r) => r.check.cmd),
+        rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks,
       });
     }
   }
