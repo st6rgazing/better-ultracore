@@ -139,3 +139,10 @@ test('checkCmd takes the command named in the request', () => {
   assert.strictEqual(checkCmd('/nonexistent', 'Run `npm run e2e` after'), 'npm run e2e');
   assert.strictEqual(checkCmd('/nonexistent', 'make it nicer'), '');
 });
+
+test('context: single named file stays small despite fuzzy matches', () => {
+  const root = path.join(__dirname, '..');
+  const c = ctx.context('Change the default port to 8080 in fixtures/vite-express/server.js', { cwd: root, offline: true });
+  assert.strictEqual(c.route, 'small');
+  assert.strictEqual(c.confidence, 'high');
+});
