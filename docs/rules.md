@@ -47,6 +47,14 @@ Per repo, kept in `$BUC_HOME/repos.json` as a setting and a list of event names 
 
 `score = count x 0.5^(days since last_seen / 60)`. Injection ranks by score and prefers the current project. A rule with score below 1 and no Stop-check violation in 90 days moves to the archive unless pinned.
 
+## Votes and caps
+
+`lib/rules/votes.js`, after ExpeL. A rule starts at 2 votes. Each time it was shown on a turn, the next prompt votes: +1 when it is not a correction, -1 when it is, within 0 to 10. An unpinned rule at 0 moves to the archive. At most 30 rules stay active (the lowest-scored unpinned ones go) and at most 3 are injected per prompt. Importing a rule again resets its votes. `BUC_OFF=votes` turns voting and both caps off. The per-repo hits and misses above only reweight a rule; votes decide whether it stays.
+
+## Reflections
+
+`lib/reflect.js`, after Reflexion. A prompt that corrects the previous turn (`still`, `overshoot`, `misread`, `undo-show`) leaves a candidate in `$BUC_HOME/reflections.jsonl`: the pattern, the hash of the correction, the session, the repo and the time; never the text. Three candidates of one pattern in one repo from at least two sessions become the rule `reflect-<pattern>`, a fixed sentence of the form "You assumed X; the user wanted Y", scoped to that repo. The candidates are used up, so a rule that votes evict needs three fresh corrections to return. No model call. `BUC_OFF=reflect` turns it off.
+
 ## Commands
 
 `buc rules list`, `why <id>`, `pin <id>` (toggles), `pin --global <id>` (pins and drops the repo scope), `drop <id>`, `import <file.json>`, `as-of ...`. Import validates every rule and reports rejected ones.
@@ -88,4 +96,9 @@ Turn-file fields added in v10, all optional (a missing one means unknown):
 | `ui` | boolean | prompt hook | a UI prompt with a resolvable dev server |
 | `toolCalls` | number | tool hook | tool calls so far this turn; a new prompt resets it |
 | `shotAt` | number | `buc-shot` or the Stop hook | epoch ms of the last screenshot this turn |
+| `lastEditAt`, `lastRunAt`, `lastTestAt` | number | tool hook | call number of the last file edit, executing command and test command this turn |
+| `lastTestOk` | boolean | tool hook | `false` when the last test command's response shows a failure |
+| `agents`, `agentAt` | number | tool hook | agent and workflow launches this turn, and the time of the last one |
+| `agentKeys` | object | tool hook | hash of each agent brief mapped to how often it was sent this turn |
+| `modelNoted` | boolean | tool hook | the missing-model notice was given this turn |
 | `prevFiles` | object | prompt hook | `files` of the last-turn record: each path the previous turn changed, mapped to its content hash before that turn (`null` when it did not exist) |

@@ -11,6 +11,8 @@ const inject = require('../hooks/inject');
 const sessionEnd = require('../hooks/session-end');
 const { correctiveTurns } = require('../lib/rules/mine');
 const { redact } = require('../lib/prefs/redact');
+const { readCorrection } = require('../lib/intent');
+const { leversOf, tally, leverMetrics } = require('./levers');
 
 // Ids of the rules a correction mentions by keyword: the same any-keyword match hooks/session-end.js bumps on.
 function wouldBump(rules, text) {
@@ -49,16 +51,19 @@ function usable(list, known) {
 // corrections and bumps rules. Every `every` sessions decayed rules are archived and `cluster(candidates, rules)`
 // returns rules to import, auto-approved in replay only. learn: false never clusters, so no rule is ever learned.
 // byRepo: false ranks without per-repo stats.
-// Returns {sessions, turns, corrections, injections, rules, archived, cluster_calls}. A correction is a turn the rule
+// Returns {sessions, turns, corrections, injections, levers, rules, archived, cluster_calls}; levers is {name: {turns, chars}}. A correction is a turn the rule
 // miner would queue, with the request before it: {session, idx, ts, request, text, injected, would_bump, covered,
 // regret}. covered lists the rules that were shown on the request and that the correction would bump.
 function replay(sessions, { home, learn = true, every = 5, cluster = null, byRepo = true, log = () => {} } = {}) {
-  const saved = { BUC_HOME: process.env.BUC_HOME, BUC_NOW: process.env.BUC_NOW };
+  const saved = { BUC_HOME: process.env.BUC_HOME, BUC_NOW: process.env.BUC_NOW, BUC_OFF: process.env.BUC_OFF };
   fs.mkdirSync(home, { recursive: true });
   process.env.BUC_HOME = home;
+  // A run that never learns must not learn through reflections either (lib/reflect.js stores rules with no clustering).
+  if (!learn) process.env.BUC_OFF = [process.env.BUC_OFF, 'reflect'].filter(Boolean).join(',');
   const corrections = [];
   const injections = [];
   const done = new Set();
+  const levers = {};
   let calls = 0;
   let turns = 0;
   let learning = learn && typeof cluster === 'function';
@@ -77,16 +82,19 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
           const shown = new Set(prev.rules.map((r) => r.id));
           corrections.push({
             session: s.session, idx: t.idx, ts: t.ts, request: prev.text, text: t.text, injected: [...shown], would_bump: bump,
+            levers: prev.levers, pattern: readCorrection(t.text, true).pattern,
             covered: prev.rules.filter((r) => bump.includes(r.id)),
             regret: wouldBump(readArchive().filter((r) => r && r.when && !ids.has(r.id)), t.text),
           });
         }
-        inject.run({ prompt: t.text, cwd: t.cwd || s.cwd, session_id: s.session, transcript_path: '' });
+        const out = inject.run({ prompt: t.text, cwd: t.cwd || s.cwd, session_id: s.session, transcript_path: '' });
+        const shownLevers = leversOf(out ? out.hookSpecificOutput.additionalContext : '', t.text);
+        tally(levers, shownLevers);
         const last = store.loadLastTurn(s.session);
         const byId = new Map(store.loadRules().map((r) => [r.id, r]));
         const rules = (last && Array.isArray(last.rules) ? last.rules : []).map((id) => ({ id, rule: (byId.get(id) || {}).rule || '', origin: (byId.get(id) || {}).origin || '' }));
         if (rules.length) injections.push({ session: s.session, idx: t.idx, ts: t.ts, prompt: t.text, rules });
-        prev = { text: t.text, rules };
+        prev = { text: t.text, rules, levers: shownLevers };
       }
       process.env.BUC_NOW = s.end || s.start;
       sessionEnd.run({ transcript_path: s.file });
@@ -108,7 +116,7 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
       }
     });
     return {
-      sessions: sessions.length, turns, corrections, injections, cluster_calls: calls,
+      sessions: sessions.length, turns, corrections, injections, levers, cluster_calls: calls,
       rules: store.loadRules().map((r) => ({ id: r.id, count: r.count, origin: r.origin })), archived: readArchive().map((r) => r.id),
     };
   } finally {
@@ -153,6 +161,8 @@ function metrics(run, { confirmed = null, relevant = null } = {}) {
       ...(relevant && { judged: relevant.sampled, relevant: relevant.yes, precision: share(relevant.yes, relevant.sampled) }),
     },
     decay_regret: { archived: run.archived.length, regretted_rules: regretted.size, corrections: c.filter((x) => x.regret.length).length },
+    // Per injected lever: its token cost and the corrections of the kind it targets that followed it (bench/levers.js).
+    levers: leverMetrics(run),
   };
 }
 
@@ -208,6 +218,14 @@ function samplePrecision(run, opts, { n = 120, seed = 10, ...extra } = {}) {
 
 const pct = (x) => (x === null || x === undefined ? '-' : `${(100 * x).toFixed(0)}%`);
 
+// One line per lever of metrics().levers, the costliest first; [] when a run has none.
+function leverLines(levers) {
+  return Object.entries(levers || {}).sort((a, b) => b[1].tokens - a[1].tokens).map(([name, l]) => {
+    const rate = l.per_1k === null ? '-' : l.per_1k.toFixed(2);
+    return `Lever ${name}: ${l.turns} turns, ${l.tokens} tokens, ${l.followed} corrections after it, ${l.addressed ?? '-'} of its kind (${rate} per 1k tokens, an upper bound on corrections avoided)`;
+  });
+}
+
 // The metrics of the three runs as a short text table.
 function summary(result) {
   const row = (name, m) => `| ${name} | ${m.coverage.corrections} | ${m.coverage.recurring} | ${m.coverage.covered} (${pct(m.coverage.coverage)}) | ${m.coverage.covered_learned} | ${m.coverage.confirmed ?? '-'} (${pct(m.coverage.confirmed_coverage)}) | ${pct(m.first_half.coverage)} | ${pct(m.second_half.coverage)} | ${m.rules} | ${m.decay_regret.regretted_rules} of ${m.decay_regret.archived} |`;
@@ -223,6 +241,7 @@ function summary(result) {
     '',
     `Injection: rules shown on ${inj.turns_with_rules} of ${result.learn.turns} turns (${inj.rule_instances} rule showings, ${inj.learned_instances} of learned rules); learned showings judged relevant ${inj.relevant ?? '-'} of ${inj.judged ?? '-'} sampled (${pct(inj.precision)})`,
     ...(day ? [`By day (${day.learn.sessions} units, ${day.learn.cluster_calls} clustering steps): rules shown on ${day.learn.injection.turns_with_rules} turns (${day.learn.injection.learned_instances} showings of learned rules); judged relevant ${day.learn.injection.relevant ?? '-'} of ${day.learn.injection.judged ?? '-'} sampled (${pct(day.learn.injection.precision)})`] : []),
+    ...leverLines(result.learn.levers),
     `Model spend: $${result.spent_usd.toFixed(3)}`,
   ].join('\n');
 }

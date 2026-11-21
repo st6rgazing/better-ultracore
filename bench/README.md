@@ -163,6 +163,8 @@ The set is small: the first build yielded 2 correction cases and 3 controls from
 
 It runs three replays (learning, learning without per-repo stats, no learning), then the same three with every multi-day session split into one unit per day, because a session that runs for weeks would otherwise never see a rule learned from its own first days. It prints a table and writes the numbers, with no text, to `<cache>/replay-metrics.json`.
 
+Each run also has `levers` (`bench/levers.js`): for every kind of line the prompt hook injects (`rules`, `intent`, `orchestrate`, `probe`, `check`, `typecheck`, `stale`, `shot`) the turns it was shown on, its cost in tokens (chars / 4), the corrections that followed it, and how many of those are of the kind it targets, as a rate per 1000 injected tokens. That rate is an upper bound on corrections avoided: the session's agent never saw the line. A covered correction counts for `rules`, a misread, overshoot or undo for `intent`, a still-broken for `probe`, `check` and `typecheck`; the other levers have no offline signal and show `-`. Votes and reflections run during replay as they do live, except that the no-learning run has reflections off.
+
 | Metric | Meaning |
 |---|---|
 | corrections | turns the rule miner would queue (cue word, at most 240 characters) that follow a request in the same session |

@@ -1,10 +1,13 @@
 'use strict';
 // PostToolBatch: count this turn's tool calls in the turn file and say once when a turn passes its budget, once more at twice that.
+// Also keeps the turn's tool log (lib/turnlog.js) and the agent budget (lib/budget.js), which can stop the turn with exit 2.
 // Input (hooks reference): {session_id, cwd, hook_event_name, tool_calls: [{tool_name, tool_input, tool_use_id, tool_response}]}.
 // A PostToolUse input ({tool_name, tool_input}) counts as one call, so the same script works on either event.
 const fs = require('node:fs');
 const path = require('node:path');
 const store = require('../lib/rules/store');
+const turnlog = require('../lib/turnlog');
+const agentBudget = require('../lib/budget');
 
 const SMALL = 20; // turns with a fixed reading or a correction
 const LARGE = 45; // every other turn
@@ -31,21 +34,22 @@ function run(input) {
   const turn = store.readTurn(sessionId) || {};
   const before = Number(turn.toolCalls) || 0;
   const after = before + calls.length;
-  const patch = { toolCalls: after };
+  const root = turn.root || input.cwd || process.cwd();
+  const agents = agentBudget.inspect(turn, calls, root);
+  const patch = { toolCalls: after, ...turnlog.record(turn, calls), ...agents.patch };
   if (calls.some((c) => c && c.tool_name === 'Bash' && SHOT.test(String((c.tool_input || {}).command || '')))) patch.shotAt = store.now();
   store.patchTurn(sessionId, patch);
-  const root = turn.root || input.cwd || process.cwd();
-  if (store.off('budget', root)) return null;
-  const limit = budget(turn, root);
+  // A hard stop: the caller exits 2 with the reason on stderr, which ends the tool loop.
+  if (agents.stop) return { stop: agents.stop };
+  const notes = [...agents.notes];
+  const limit = store.off('budget', root) ? 0 : budget(turn, root);
   const crossed = (n) => before < n && after >= n;
-  if (!limit || !(crossed(limit) || crossed(limit * 2))) return null;
-  const size = limit <= SMALL ? 'a small request' : 'one request';
-  return {
-    hookSpecificOutput: {
-      hookEventName: input.hook_event_name || 'PostToolBatch',
-      additionalContext: `Budget: ${after} tool calls on ${size}. Stop exploring, finish the edit you have, report what is unverified.`,
-    },
-  };
+  if (limit && (crossed(limit) || crossed(limit * 2))) {
+    const size = limit <= SMALL ? 'a small request' : 'one request';
+    notes.unshift(`Budget: ${after} tool calls on ${size}. Stop exploring, finish the edit you have, report what is unverified.`);
+  }
+  if (!notes.length) return null;
+  return { hookSpecificOutput: { hookEventName: input.hook_event_name || 'PostToolBatch', additionalContext: notes.join('\n') } };
 }
 
 module.exports = { run, budget, SMALL, LARGE };
@@ -55,7 +59,10 @@ if (require.main === module) {
   process.stdin.on('data', (d) => { raw += d; }).on('end', () => {
     try {
       const out = run(JSON.parse(raw));
-      if (out) console.log(JSON.stringify(out));
+      if (out && out.stop) {
+        process.stderr.write(`${out.stop}\n`);
+        process.exitCode = 2;
+      } else if (out) console.log(JSON.stringify(out));
     } catch { /* a hook must never break the turn */ }
   });
 }

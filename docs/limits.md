@@ -13,6 +13,11 @@
 | typecheck | on when the repo has the script | Blocks only when the output names a file changed this turn. A failure elsewhere passes with a note. |
 | switching a check off | n/a | Each check id is a `BUC_OFF` name (comma list), also `"off"` in `.claude/buc.json`. `shot` turns off the Stop screenshot, `budget` the tool-call notice. |
 | tool-call budget | 20 or 45 | Advisory. `hooks/track.js` on `PostToolBatch` counts tool calls per turn and says so once at the budget and once at twice it: 20 on a turn with a fixed reading or a correction, 45 otherwise. `"toolBudget"` in `.claude/buc.json`: a number, `{small, large}` or `false`. Subagent calls are not counted. Nothing is stopped. |
+| agent budget | 2 or 6, ceiling 16 | `lib/budget.js`, run by `hooks/track.js`, counts `Agent`, `Task` and `Workflow` calls per turn. Advisory once above the cap (2 on a turn with a fixed reading or a correction, 6 otherwise). Enforced at the ceiling: the hook exits 2 with the reason, which ends the tool loop. `"agentBudget"` in `.claude/buc.json`: `false`, a number (the cap) or `{small, large, ceiling}`. `BUC_OFF=agents` turns both off. A Workflow call counts as one launch, whatever it starts; a new prompt resets the count. |
+| agent limit error | on | Enforced: exit 2 when an agent call returns a usage-limit or account error (an error-flagged or short response naming one). `BUC_OFF=agent-limit`. |
+| repeated agent brief | 2 | Enforced: exit 2 when the same brief goes to the same agent type a third time in one turn. Briefs are kept as hashes. `BUC_OFF=agent-repeat`. |
+| agent without a model | on | Advisory, once per turn: an `Agent` call of a default type with no `model`, or an inline Workflow script that never sets one. `BUC_OFF=agent-model`. |
+| orchestration line | on | Advisory, fixed text under 80 chars, inside the 500-char cap for fixed lines. The keyword as a request: solo when the prompt is small, sized otherwise (`BUC_OFF=solo`). The keyword only mentioned (quoted, in code, in a name, or the subject): not a request (`BUC_OFF=keyword`). Agents launched in the last 30 minutes and no Stop since: the message is for the orchestrator only (`BUC_OFF=midturn`). |
 | screenshot | 60 s, 45 s at Stop | `bin/buc-shot` waits 20 s for the server, stops the server it started on every path (also when killed), and exits 0 with `skipped:` when there is no engine or server. A server that already answered is used and left running. |
 | judgment checks, rule text | n/a | Advisory. Injected as text and yes/no questions. |
 | maxElapsedMin | 30 | Advisory inside a workflow (scripts have no clock). Enforced only through `bin/buc run-headless --timeout-min N` (SIGTERM, then SIGKILL). |
@@ -28,8 +33,12 @@
 | `sweep-residue` | hard | The intent is `SWEEP`, the prompt names a literal (`"A" to "B"`, a quoted string after remove or replace, or a code-like word), and `git grep -F` still finds it. Reports 3 hits. Lock files are skipped. |
 | `no-test-weakening` | hard | A test file was removed (a move keeps its name and passes), or `.skip`, `.only`, `xit(` and the like were added to one, and the prompt does not mention tests. |
 | `conflict-or-debugger` | hard | An added line starts with a conflict marker, or a `debugger` statement was added to a script file. |
+| `unbacked-claim` | hard | The reply says tests pass and the turn's tool log shows a failed last test run, or an edit with no test command and no other run after it; or it says verified and no tool call followed the last edit. Sentences that plan, doubt, ask or deny are not claims. Passes when the tool hook logged nothing this turn or the turn made no edit. Soft when the turn launched agents (their calls are not in the log). |
+| `edit-unrun` | soft | A bug-fix edit prompt (not about wording or looks), an edit in the tool log and no executing command after it, and the reply does not already say it is unverified. Not reported when `unbacked-claim` failed. |
 | `ended-with-question` | soft | An edit prompt of at most 25 words with no destructive word, nothing changed, and the reply ends in `?`. |
 | `wide-diff` | soft | The intent is `EXACT` or `LITERAL` and the turn changed over 5 files or 150 lines, tests and lock files aside. |
+
+The tool log (`lib/turnlog.js`) holds call numbers and outcomes only: `lastEditAt`, `lastRunAt`, `lastTestAt`, `lastTestOk`. It sees `Edit`, `Write`, `MultiEdit`, `NotebookEdit` and `Bash`; an edit made through a shell command is not logged, so the two evidence checks stay silent on it. A failed run is read from an error flag, a non-zero exit code or a failing test summary in the response.
 
 Known gaps: a file that was already dirty when the turn began and was edited again is not seen as changed; `sweep-residue` cannot tell an intended leftover (a changelog entry) from a missed one, so its message allows a one-line reason.
 
