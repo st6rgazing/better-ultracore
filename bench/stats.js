@@ -140,6 +140,16 @@ function criteria(rows, { a = 'buc', b = 'plain', regression = [], B = 10000, se
   return out;
 }
 
+// The pre-registered wording: all six pass, only the first fails, or anything else. A criterion without data
+// (pass null) leaves the verdict open rather than counting either way.
+function verdict(results) {
+  const open = results.filter((x) => x.pass === null).map((x) => x.id);
+  if (open.length) return `incomplete: criteria ${open.join(', ')} not evaluated`;
+  if (results.every((x) => x.pass)) return 'v10 generalises';
+  if (results.filter((x) => x.id !== 1).every((x) => x.pass)) return 'no measurable gain on unseen tasks';
+  return 'regression: v10 does not ship';
+}
+
 // CLI: node bench/stats.js <results.json> [--a buc] [--b plain] [--metric interventions] [--B 10000] [--seed 10]
 function main(argv) {
   const f = { a: 'buc', b: 'plain', metric: 'interventions', B: '10000', seed: '10' };
@@ -153,5 +163,5 @@ function main(argv) {
   console.log(JSON.stringify({ a: f.a, b: f.b, metric: f.metric, ...r }));
 }
 
-module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap, armSummary, behindCases, criteria };
+module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap, armSummary, behindCases, criteria, verdict };
 if (require.main === module) main(process.argv.slice(2));

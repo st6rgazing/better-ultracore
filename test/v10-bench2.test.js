@@ -262,4 +262,13 @@ test('criteria: each one fails on its own evidence', () => {
   assert.strictEqual(stats.criteria(runs('solo', 'buc', 3), { B: 500 })[0].pass, null);
 });
 
+test('verdict uses the pre-registered wording', () => {
+  const v = (...p) => stats.verdict(p.map((pass, i) => ({ id: i + 1, pass })));
+  assert.strictEqual(v(true, true, true, true, true, true), 'v10 generalises');
+  assert.strictEqual(v(false, true, true, true, true, true), 'no measurable gain on unseen tasks');
+  assert.strictEqual(v(true, false, true, true, true, true), 'regression: v10 does not ship');
+  assert.strictEqual(v(false, true, true, false, true, true), 'regression: v10 does not ship');
+  assert.strictEqual(v(true, true, true, true, null, null), 'incomplete: criteria 5, 6 not evaluated');
+});
+
 // more tests below
