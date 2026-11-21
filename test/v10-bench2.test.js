@@ -337,4 +337,32 @@ test('ask caches answers, charges the ledger and stops at the cap', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+// Transcript lines the way Claude Code writes them.
+const line = (o) => JSON.stringify(o);
+const userTurn = (session, ts, text, cwd = '/nowhere') => line({ type: 'user', sessionId: session, timestamp: ts, cwd, message: { role: 'user', content: text } });
+const editTurn = (session, ts, file) => line({ type: 'assistant', sessionId: session, timestamp: ts, message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', name: 'Edit', input: { file_path: file } }] } });
+
+// Writes <root>/<project>/<session>.jsonl from [[kind, minute offset, text or file]].
+function transcript(root, project, session, day, items) {
+  const ts = (min) => new Date(Date.parse(`${day}T10:00:00.000Z`) + min * 60000).toISOString();
+  const file = path.join(root, project, `${session}.jsonl`);
+  write(file, `${items.map(([kind, min, x]) => (kind === 'u' ? userTurn(session, ts(min), x) : editTurn(session, ts(min), x))).join('\n')}\n`);
+  return file;
+}
+
+test('sessionTurns keeps typed turns with the files edited after them', () => {
+  const { sessionTurns, allSessions } = require('../bench/transcripts');
+  const root = tmp('turns');
+  try {
+    const f = transcript(root, '-Users-x-app', 's2', '2026-05-02', [['u', 0, 'add a save button'], ['a', 1, '/app/a.tsx'], ['a', 2, '/app/a.tsx'], ['a', 3, '/app/b.css'], ['u', 5, '<system-reminder>x</system-reminder>'], ['u', 6, 'no, smaller']]);
+    fs.appendFileSync(f, `${line({ type: 'user', sessionId: 's2', timestamp: '2026-05-02T10:07:00.000Z', message: { content: [{ type: 'tool_result', content: 'x' }] } })}\n`);
+    const s = sessionTurns(f);
+    assert.deepStrictEqual(s.turns.map((t) => [t.idx, t.text, t.edits, t.files]), [[0, 'add a save button', 3, ['/app/a.tsx', '/app/b.css']], [1, 'no, smaller', 0, []]]);
+    assert.deepStrictEqual([s.session, s.start, s.end], ['s2', '2026-05-02T10:00:00.000Z', '2026-05-02T10:07:00.000Z']);
+    transcript(root, '-Users-x-app', 's1', '2026-05-01', [['u', 0, 'hello there']]);
+    transcript(root, '-private-tmp-x', 's0', '2026-04-01', [['u', 0, 'temp session']]);
+    assert.deepStrictEqual(allSessions(root).map((x) => x.session), ['s1', 's2']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
