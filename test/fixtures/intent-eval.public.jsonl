@@ -97,3 +97,4 @@
 {"id":"h14","prompt":"how can i run this on another port","gold":"show"}
 {"id":"h15","prompt":"explain what the debounce in the search box is for","gold":"show"}
 {"id":"h16","prompt":"show me a spinner while the list loads","gold":"feature","note":"show me as a feature verb: a known miss"}
+{"id":"h17","prompt":"audit lib/session.js and list the risks. review only, do not modify any file","gold":"show","note":"only plus a path in a review: must not get the literal line"}

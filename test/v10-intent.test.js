@@ -336,3 +336,9 @@ test('scorePatterns in regex mode reports fires without precision', () => {
   assert.strictEqual(score.literal.precision, null);
   assert.strictEqual(score.self, undefined);
 });
+
+test('a review that says "only" and names a file does not get the literal line', () => {
+  const p = 'audit lib/session.js and list the risks. review only, do not modify any file';
+  assert.strictEqual(intent.readIntent(p, { kind: 'edit' }).pattern, 'self');
+  assert.strictEqual(intent.readIntent('only change the title in src/header.js', { kind: 'edit' }).pattern, 'narrow-path');
+});
