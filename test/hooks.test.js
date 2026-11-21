@@ -231,7 +231,7 @@ test('a correction on the second turn replaces the intent line', () => {
   const first = hook('inject.js', { prompt: 'make the guide icons nicer', cwd: dir, session_id: 'r1' }, home);
   assert.doesNotMatch(first.hookSpecificOutput.additionalContext, /corrects your last turn/);
   const ctx = hook('inject.js', { prompt: 'no thats not what i meant', cwd: dir, session_id: 'r1' }, home).hookSpecificOutput.additionalContext;
-  assert.match(ctx, /Fix only the unmet items/);
+  assert.match(ctx, /different reading/);
   assert.doesNotMatch(ctx, /where the user will see it|Read the request literally/);
 });
 
