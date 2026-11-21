@@ -156,4 +156,22 @@ test('sweep-residue does not count the new name when it contains the old one', (
   assert.strictEqual(run('sweep-residue', t).pass, true);
 });
 
+test('no-test-weakening blocks a removed test file or an added skip, unless the prompt is about tests', () => {
+  const dir = repo({ 'app.js': 'a\n', 'test/app.test.js': "test('a', () => {});\n", 'test/b.test.js': 'b\n' });
+  const t = turn(dir, 'fix the header colour');
+  write(dir, 'app.js', 'it.skip is only text here\n');
+  assert.strictEqual(run('no-test-weakening', t).pass, true, 'markers outside test files do not count');
+  write(dir, 'test/app.test.js', "test.skip('a', () => {});\n");
+  const r = run('no-test-weakening', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /switched off at test\/app\.test\.js:1/);
+  assert.strictEqual(run('no-test-weakening', { ...t, prompt: 'skip the flaky test for now' }).pass, true);
+  write(dir, 'test/app.test.js', "test('a', () => {});\n");
+  assert.strictEqual(run('no-test-weakening', t).pass, true);
+  fs.unlinkSync(path.join(dir, 'test/b.test.js'));
+  assert.match(run('no-test-weakening', t).detail, /test file removed: test\/b\.test\.js/);
+  write(dir, 'test/unit/b.test.js', 'b\n');
+  assert.strictEqual(run('no-test-weakening', t).pass, true, 'a moved test file is not a removal');
+});
+
 // end
