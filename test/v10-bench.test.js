@@ -186,3 +186,14 @@ test('a fixture transcript and repo yield the expected triple', () => {
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('standalone, kindOf, isUi', () => {
+  assert.ok(mc.standalone('make the late fee five dollars instead of two'));
+  for (const t of ['still', 'no not that one please', 'also add a button there', 'it does not work at all']) assert.ok(!mc.standalone(t), t);
+  assert.strictEqual(mc.kindOf('undo your changes and just tell me the steps'), 'show');
+  assert.strictEqual(mc.kindOf('not the whole page, just the header'), 'wide');
+  assert.strictEqual(mc.kindOf('the footer links are still blue'), 'narrow');
+  assert.strictEqual(mc.kindOf('make it blue'), 'other');
+  assert.ok(mc.isUi(['src/App.tsx']));
+  assert.ok(!mc.isUi(['server/rooms.ts']));
+});
+

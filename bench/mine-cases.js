@@ -172,4 +172,16 @@ function standalone(text) {
   return !/^\s*(no\b|nope|still|undo|revert|wrong|not\b|i said|that'?s not|why did you|you |also|and|now|ok|okay|yes|yeah|yep|it|its|it'?s|that|this|these|those|then|same|again|here|done|keep|or)\b/i.test(t);
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone };
+// What the correction says went wrong, by cue: show (wanted text, not edits), wide (did too much or the wrong
+// scope), narrow (did too little or it is still not there), else other.
+function kindOf(text) {
+  const t = text.toLowerCase();
+  if (/\b(show|tell) me\b|\bjust (show|tell|explain)\b|\bdon'?t (edit|change|touch) (anything|any)\b|\bundo (ur|your|all|the) changes?\b/.test(t)) return 'show';
+  if (/\b(only|just) (the|this|that|for|on|in|change|when|one)\b|^\s*(no[, ]+)?not (the|that|this|all|every|so)\b|\btoo (much|many|big|far|long)\b|didn'?t ask|\bundo\b|\brevert\b|\bback (to|the way)\b|why did you|\bleave\b.*\b(alone|as (it|is))\b|not everything|\bscrap\b|\bremove (that|this|the)\b/.test(t)) return 'wide';
+  if (/\bstill\b|\balso\b|as well|everywhere|\bevery(thing)?\b|\ball (of )?the\b|the rest|forgot|missed|missing|not (working|fixed|done|changed|showing)|doesn'?t|nothing (changed|happened)|\bother\b/.test(t)) return 'narrow';
+  return 'other';
+}
+
+const isUi = (files) => files.some((f) => UI_FILE.test(f));
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi };
