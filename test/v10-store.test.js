@@ -51,3 +51,12 @@ test('off() reads BUC_OFF and the repo buc.json off list', () => {
   fs.writeFileSync(path.join(root, '.claude', 'buc.json'), '{broken');
   withEnv({ BUC_OFF: undefined }, () => assert.strictEqual(store.off('shot', root), false));
 });
+
+test('repoState is empty for an unknown repo and reads repos.json', () => {
+  const home = fresh();
+  assert.deepStrictEqual(store.repoState('nope'), { events: [] });
+  fs.writeFileSync(path.join(home, 'repos.json'), JSON.stringify({ r1: { handsOff: 'on' } }));
+  assert.deepStrictEqual(store.repoState('r1'), { handsOff: 'on', events: [] });
+  fs.writeFileSync(path.join(home, 'repos.json'), 'not json');
+  assert.deepStrictEqual(store.repoState('r1'), { events: [] });
+});
