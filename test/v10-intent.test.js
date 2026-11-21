@@ -50,7 +50,7 @@ test('the guide-icons and house-rules prompt shapes get the self-classification 
   ];
   for (const p of shapes) {
     const r = intent.readIntent(p);
-    assert.strictEqual(r.line, intent.SELF, p);
+    assert.strictEqual(r.line, intent.SELF_SHORT, p);
     assert.strictEqual(r.name, 'SELF', p);
     assert.strictEqual(r.pattern, 'self', p);
   }
@@ -115,10 +115,10 @@ test('regex mode restores the v9 lines', () => {
 
 test('the hook injects the self line, and BUC_OFF=self or "intent": "regex" restores v9', () => {
   const p = 'add a back button to the settings page';
-  assert.match(inject({ prompt: p, cwd: repo(), session_id: 'm1' }, tmp('buc-home-')), /Before editing, decide which this is/);
+  assert.match(inject({ prompt: p, cwd: repo(), session_id: 'm1' }, tmp('buc-home-')), /Name your reading in your first line/);
   const off = inject({ prompt: p, cwd: repo(), session_id: 'm2' }, tmp('buc-home-'), { BUC_OFF: 'self' });
   assert.match(off, /where the user will see it/);
-  assert.doesNotMatch(off, /decide which this is/);
+  assert.doesNotMatch(off, /Name your reading in your first line/);
   const conf = inject({ prompt: p, cwd: repo({ '.claude/buc.json': '{"intent":"regex"}' }), session_id: 'm3' }, tmp('buc-home-'));
   assert.match(conf, /where the user will see it/);
   assert.strictEqual(intent.intentMode(repo()), 'self');
