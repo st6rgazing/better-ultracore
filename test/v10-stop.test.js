@@ -211,4 +211,21 @@ test('typecheck blocks only when the output names a file changed this turn', () 
   assert.doesNotMatch(r.detail, /legacy/);
 });
 
+test('ended-with-question fires on a short edit prompt answered by a question with no change', () => {
+  const dir = repo();
+  const t = turn(dir, 'make the header blue');
+  const ask = { last_assistant_message: 'Which header do you mean, the page one or the card one?' };
+  const r = run('ended-with-question', t, ask);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /Pick the likeliest reading/);
+  assert.strictEqual(run('ended-with-question', t, { last_assistant_message: 'Done. The header is blue.' }).pass, true);
+  assert.strictEqual(run('ended-with-question', t, {}).pass, true, 'no reply text');
+  assert.strictEqual(run('ended-with-question', { ...t, prompt: 'delete the old migrations' }, ask).pass, true, 'destructive word');
+  assert.strictEqual(run('ended-with-question', { ...t, prompt: Array(26).fill('word').join(' ') }, ask).pass, true, 'long prompt');
+  assert.strictEqual(run('ended-with-question', { ...t, kind: 'advice' }, ask).pass, true);
+  assert.strictEqual(run('ended-with-question', { ...t, intent: 'HANDSOFF' }, ask).pass, true);
+  write(dir, 'app.js', 'changed\n');
+  assert.strictEqual(run('ended-with-question', t, ask).pass, true, 'something changed');
+});
+
 // end
