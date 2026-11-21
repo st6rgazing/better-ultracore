@@ -153,4 +153,53 @@ function metrics(run, { confirmed = null, relevant = null } = {}) {
   };
 }
 
-module.exports = { coverage, metrics, replay, wouldBump, stripByRepo, freshCandidates, usable };
+const clip = (text, n = 400) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, n);
+
+const CLUSTER = `Below are short corrections a user typed to a coding assistant, each with a hash "h", and the standing rules already learned from earlier ones.
+Cluster the corrections into at most 15 standing rules that would have prevented them. Reuse an existing rule's id when a correction teaches the same lesson. Leave out corrections that are one-off, about one specific bug, or teach nothing reusable.
+Return a JSON array. Each rule is {"id": "lowercase-slug", "rule": "an instruction of at most 25 words", "when": {"keywords": ["3 to 8 single lowercase words likely to appear in a future request where the rule applies, or in a correction that breaks it"]}, "kind": "process|ui|code|git|output|communication", "sources": ["the h of every correction it came from, copied exactly"]}.`;
+
+// A cluster(candidates, rules) for replay() that asks a model through bench/ask.js (cached, capped). opts go to ask().
+function modelCluster(opts, askFn = require('./ask').ask) {
+  const { jsonIn } = require('./ask');
+  return (candidates, rules) => {
+    const body = { rules: rules.map((r) => ({ id: r.id, rule: r.rule })), corrections: candidates.map((c) => ({ h: c.h, text: clip(c.text, 240) })) };
+    const got = jsonIn(askFn(`${CLUSTER}\n\n${JSON.stringify(body)}`, opts).text);
+    return Array.isArray(got) ? got : [];
+  };
+}
+
+// Yes/no answers from a model for a list of items, asked in batches. Returns one entry per item: true, false, or
+// null when the model gave no answer for it (or the budget ran out first).
+function judge(items, question, opts, { size = 30, askFn = require('./ask').ask } = {}) {
+  const { jsonIn } = require('./ask');
+  const out = new Array(items.length).fill(null);
+  for (let at = 0; at < items.length; at += size) {
+    const batch = items.slice(at, at + size).map((x, k) => ({ i: at + k, ...x }));
+    let got = null;
+    try { got = jsonIn(askFn(`${question}\nAnswer for every item. Return a JSON array of {"i": number, "yes": true or false}.\n\n${JSON.stringify(batch)}`, opts).text); } catch (e) { if (e.code === 'BUDGET') break; }
+    for (const g of Array.isArray(got) ? got : []) if (g && Number.isInteger(g.i) && g.i >= at && g.i < at + batch.length) out[g.i] = g.yes === true;
+  }
+  return out;
+}
+
+const Q_CONFIRM = 'Each item is a request a user typed to a coding assistant, the correction the user typed after the assistant\'s attempt, and a standing rule the assistant had been shown with the request. Say yes when the correction complains about the very thing the rule tells the assistant to do or avoid, so that obeying the rule would have avoided the correction.';
+const Q_RELEVANT = 'Each item is a request a user typed to a coding assistant and a standing rule the assistant was shown with it. Say yes when the rule applies to this request: following it could change how the request should be carried out. Say no when the rule is about something the request does not involve.';
+
+// The corrections whose shown rule a judge agrees would have avoided them: metrics({confirmed}).
+function confirmCoverage(run, opts, extra) {
+  const pairs = run.corrections.flatMap((c) => c.covered.map((r) => ({ c, item: { request: clip(c.request), correction: clip(c.text), rule: r.rule } })));
+  const yes = judge(pairs.map((p) => p.item), Q_CONFIRM, opts, extra);
+  return new Set(pairs.filter((p, i) => yes[i]).map((p) => p.c));
+}
+
+// Injection precision on a seeded sample of (request, shown rule) pairs: metrics({relevant}).
+function samplePrecision(run, opts, { n = 120, seed = 10, ...extra } = {}) {
+  const all = run.injections.flatMap((x) => x.rules.map((r) => ({ request: clip(x.prompt), rule: r.rule })));
+  const next = require('./stats').rng(seed);
+  for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(next() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
+  const answers = judge(all.slice(0, n), Q_RELEVANT, opts, extra).filter((v) => v !== null);
+  return { sampled: answers.length, yes: answers.filter(Boolean).length, of: all.length };
+}
+
+module.exports = { modelCluster, judge, confirmCoverage, samplePrecision, coverage, metrics, replay, wouldBump, stripByRepo, freshCandidates, usable };

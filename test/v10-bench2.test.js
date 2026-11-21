@@ -425,4 +425,32 @@ test('replay metrics: coverage, halves, injection and decay regret', () => {
   assert.doesNotMatch(JSON.stringify(metrics(run)), /text|prompt|request/);
 });
 
+test('replay model steps: clustering, the yes/no judge and its two uses', () => {
+  const { modelCluster, judge, confirmCoverage, samplePrecision } = require('../bench/replay');
+  const seen = [];
+  const cluster = modelCluster({}, (prompt) => { seen.push(prompt); return { text: '```json\n[{"id":"a","sources":["h1"]}]\n```' }; });
+  assert.deepStrictEqual(cluster([{ h: 'h1', text: 'no emoji' }], [{ id: 'old', rule: 'Old rule.', when: {} }]), [{ id: 'a', sources: ['h1'] }]);
+  assert.match(seen[0], /"rules":\[\{"id":"old","rule":"Old rule\."\}\],"corrections":\[\{"h":"h1","text":"no emoji"\}\]/);
+  assert.deepStrictEqual(modelCluster({}, () => ({ text: 'sorry' }))([], []), []);
+  // answers arrive per batch; a missing answer stays null, a budget stop leaves the rest null
+  let calls = 0;
+  const askFn = (prompt) => {
+    calls += 1;
+    if (calls === 3) throw Object.assign(new Error('cap'), { code: 'BUDGET' });
+    const items = JSON.parse(prompt.slice(prompt.indexOf('[{"i"')));
+    return { text: JSON.stringify(items.filter((x) => x.n !== 1).map((x) => ({ i: x.i, yes: x.n % 2 === 0 }))) };
+  };
+  const items = [0, 1, 2, 3, 4, 5, 6].map((n) => ({ n }));
+  assert.deepStrictEqual(judge(items, 'Even?', {}, { size: 2, askFn }), [true, null, true, false, null, null, null]);
+  const yesFor = (word) => (prompt) => ({ text: JSON.stringify(JSON.parse(prompt.slice(prompt.indexOf('[{"i"'))).map((x) => ({ i: x.i, yes: JSON.stringify(x).includes(word) }))) });
+  const c1 = { request: 'add icons', text: 'no emoji', covered: [{ id: 'a', rule: 'No emoji.' }] };
+  const c2 = { request: 'add a footer', text: 'no, smaller', covered: [{ id: 'b', rule: 'Commit often.' }] };
+  const c3 = { request: 'x', text: 'y', covered: [] };
+  const run = { corrections: [c1, c2, c3], injections: [{ prompt: 'add icons', rules: [{ id: 'a', rule: 'No emoji.' }, { id: 'b', rule: 'Commit often.' }] }, { prompt: 'fix it', rules: [{ id: 'b', rule: 'Commit often.' }] }] };
+  const confirmed = confirmCoverage(run, {}, { askFn: yesFor('emoji') });
+  assert.ok(confirmed.has(c1) && !confirmed.has(c2) && confirmed.size === 1);
+  assert.deepStrictEqual(samplePrecision(run, {}, { n: 10, askFn: yesFor('emoji') }), { sampled: 3, yes: 1, of: 3 });
+  assert.strictEqual(samplePrecision(run, {}, { n: 2, askFn: yesFor('emoji') }).sampled, 2);
+});
+
 // more tests below
