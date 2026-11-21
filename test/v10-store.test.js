@@ -123,3 +123,61 @@ test('hands-off statements and apply prompts are recognised narrowly', () => {
   for (const p of ['apply', 'ok, do it', 'Go ahead', 'yes please apply that']) assert.ok(handsoff.isApply(p), p);
   for (const p of ['can you apply the theme to the footer', 'what would you do', '']) assert.ok(!handsoff.isApply(p), p);
 });
+
+const T0 = Date.parse('2026-06-01T00:00:00.000Z');
+const DAY = 86400000;
+const seed = (repo, list) => { for (const [e, s, day] of list) store.recordRepo(repo, e, s, T0 + day * DAY); };
+const modeAt = (repo, day) => handsoff.mode(repo, { now: T0 + day * DAY });
+
+test('hands-off auto: threshold of three statements from two sessions', () => {
+  fresh();
+  assert.deepStrictEqual(modeAt('r', 0), { mode: 'auto-idle', events: 0, sessions: 0, edits: 0, ratio: 0 });
+  seed('r', [['handsoff', 'a', 0], ['handsoff', 'b', 1]]);
+  assert.strictEqual(modeAt('r', 2).mode, 'auto-idle');
+  seed('r', [['handsoff', 'b', 2]]);
+  assert.deepStrictEqual(modeAt('r', 3), { mode: 'auto-active', events: 3, sessions: 2, edits: 0, ratio: 1 });
+});
+
+test('hands-off auto: three statements in one session are not enough', () => {
+  fresh();
+  seed('r', [['handsoff', 'a', 0], ['handsoff', 'a', 1], ['handsoff', 'a', 2]]);
+  assert.deepStrictEqual([modeAt('r', 3).mode, modeAt('r', 3).sessions], ['auto-idle', 1]);
+});
+
+test('hands-off auto: statements must be 30% of edit prompts', () => {
+  fresh();
+  seed('r', [['handsoff', 'a', 0], ['handsoff', 'b', 1], ['handsoff', 'b', 2]]);
+  seed('r', Array.from({ length: 7 }, (_, i) => ['edit', 'c', i]));
+  assert.deepStrictEqual([modeAt('r', 8).mode, modeAt('r', 8).ratio], ['auto-active', 0.3]);
+  seed('r', [['edit', 'c', 7]]);
+  assert.deepStrictEqual([modeAt('r', 8).mode, modeAt('r', 8).edits], ['auto-idle', 8]);
+});
+
+test('hands-off auto: an apply subtracts one', () => {
+  fresh();
+  seed('r', [['handsoff', 'a', 0], ['handsoff', 'b', 1], ['handsoff', 'b', 2], ['apply', 'b', 2]]);
+  assert.deepStrictEqual([modeAt('r', 3).mode, modeAt('r', 3).events], ['auto-idle', 2]);
+  seed('r', [['handsoff', 'c', 3]]);
+  assert.strictEqual(modeAt('r', 4).mode, 'auto-active');
+});
+
+test('hands-off auto: events expire after 60 days and future events do not count', () => {
+  fresh();
+  seed('r', [['handsoff', 'a', 0], ['handsoff', 'b', 1], ['handsoff', 'b', 30]]);
+  assert.strictEqual(modeAt('r', 59).mode, 'auto-active');
+  assert.strictEqual(modeAt('r', 61).mode, 'auto-idle');
+  assert.strictEqual(modeAt('r', 10).events, 2);
+});
+
+test('hands-off: an explicit setting overrides the evidence, and BUC_OFF=handsoff forces off', () => {
+  fresh();
+  store.setRepo('r', { handsOff: 'on' });
+  assert.strictEqual(modeAt('r', 0).mode, 'on');
+  seed('r', [['handsoff', 'a', 0], ['handsoff', 'b', 1], ['handsoff', 'b', 2]]);
+  store.setRepo('r', { handsOff: 'off' });
+  assert.strictEqual(modeAt('r', 3).mode, 'off');
+  store.setRepo('r', { handsOff: 'auto' });
+  assert.strictEqual(modeAt('r', 3).mode, 'auto-active');
+  store.setRepo('r', { handsOff: 'on' });
+  withEnv({ BUC_OFF: 'handsoff' }, () => assert.strictEqual(modeAt('r', 3).mode, 'off'));
+});
