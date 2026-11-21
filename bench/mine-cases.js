@@ -151,40 +151,50 @@ const minerVisible = (text) => text.trim().length <= MINER_MAX_LEN && isCue(text
 const OPS = /^\s*(yes[, ]+|ok(ay)?[, ]+|done[, ]+)?(push|deploy|straight to|go live|ship|merge|commit|build to|try to deploy|relaunched|reconnected|keep|done|ok(ay)?|yes|yep|perfect|go ahead|continue)\b/i;
 const isOps = (text) => text.trim().split(/\s+/).length <= 8 && OPS.test(text);
 
-// Every pair of consecutive non-operational user turns (P, C) of one session with SHAs resolved; nothing is
-// filtered here. N is the next such turn after C without a correction cue, or the end of the session.
+// One candidate: request P, later turn C, SHAs resolved by timestamp. N is the next request after C without a
+// correction cue, or the end of the session. `far` marks a C that is not the next request after P.
+function candidate(turns, end, P, C, far) {
+  const req = turns.filter((t) => !isOps(t.text) || t === C);
+  const repo = repoOf(P.cwd);
+  let j = req.indexOf(C) + 1;
+  while (j < req.length && isCue(req[j].text)) j++;
+  const nIdx = j < req.length ? req[j].idx : turns.length;
+  const nTs = j < req.length ? req[j].ts : end;
+  // Assistant work between P and N: edit tools, commits and subagent spawns (subagents edit out of sight).
+  const work = turns.slice(P.idx, nIdx).reduce((n, t) => n + t.edits + t.commits + t.spawns, 0);
+  let shas = { base: null, wrong: null, fix: null, done: null };
+  let ref = null;
+  if (repo) {
+    ref = P.branch && git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${P.branch}`) ? P.branch : 'HEAD';
+    shas = resolveShas(repo, ref, P.ts, C.ts, nTs);
+  }
+  const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
+  const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
+  const id = `${P.session.slice(0, 8)}-${P.n}`;
+  return {
+    id, ...(C.queued || far ? { key: `${id}>${C.n}` } : {}),
+    session: P.session, idx: P.idx, turns: turns.length, repo, ref,
+    p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
+    c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, queued: !!C.queued, cue: isCue(C.text), visible: minerVisible(C.text) },
+    ack: C.idx > P.idx + 1, n_ts: nTs, work, ...shas,
+    fix_lines: fixStat.lines, fix_files: fixStat.files, done_lines: doneStat.lines, done_files: doneStat.files,
+  };
+}
+
+// Every pair of consecutive non-operational user turns (P, C) of one session; nothing is filtered here.
 function triples(file) {
   const { turns, end } = parseSession(file);
   const req = turns.filter((t) => !isOps(t.text));
-  const out = [];
-  for (let i = 0; i + 1 < req.length; i++) {
-    const P = req[i];
-    const C = req[i + 1];
-    const repo = repoOf(P.cwd);
-    let j = i + 2;
-    while (j < req.length && isCue(req[j].text)) j++;
-    const nIdx = j < req.length ? req[j].idx : turns.length;
-    const nTs = j < req.length ? req[j].ts : end;
-    // Assistant work between P and N: edit tools, commits and subagent spawns (subagents edit out of sight).
-    const work = turns.slice(P.idx, nIdx).reduce((n, t) => n + t.edits + t.commits + t.spawns, 0);
-    let shas = { base: null, wrong: null, fix: null, done: null };
-    let ref = null;
-    if (repo) {
-      ref = P.branch && git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${P.branch}`) ? P.branch : 'HEAD';
-      shas = resolveShas(repo, ref, P.ts, C.ts, nTs);
-    }
-    const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
-    const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
-    out.push({
-      id: `${P.session.slice(0, 8)}-${P.n}`, ...(C.queued ? { key: `${P.session.slice(0, 8)}-${P.n}>${C.n}` } : {}),
-      session: P.session, idx: P.idx, turns: turns.length, repo, ref,
-      p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
-      c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, queued: !!C.queued, cue: isCue(C.text), visible: minerVisible(C.text) },
-      ack: C.idx > P.idx + 1, n_ts: nTs, work, ...shas,
-      fix_lines: fixStat.lines, fix_files: fixStat.files, done_lines: doneStat.lines, done_files: doneStat.files,
-    });
-  }
-  return out;
+  return req.slice(0, -1).map((P, i) => candidate(turns, end, P, req[i + 1], false));
+}
+
+// The candidate for two named turns (their `n`) of one session, for a correction that came some requests
+// after what it corrects. Its label key is always id>C. Null when either turn is missing or out of order.
+function pairAt(file, pN, cN) {
+  const { turns, end } = parseSession(file);
+  const P = turns.find((t) => t.n === pN);
+  const C = turns.find((t) => t.n === cN);
+  return P && C && C.idx > P.idx ? candidate(turns, end, P, C, true) : null;
 }
 
 // Step 1: candidates from every transcript under root.
@@ -553,5 +563,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, promptText, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, candidate, triples, pairAt, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, promptText, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));

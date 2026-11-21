@@ -231,6 +231,19 @@ test('a fixture transcript and repo yield the expected triple', () => {
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('pairAt: two named turns give a candidate with its own label key', () => {
+  const fx = fixture();
+  try {
+    const c = mc.pairAt(fx.file, '000', '003');
+    assert.deepStrictEqual([c.id, c.key, c.base, c.done], ['11111111-000', '11111111-000>003', fx.sha.base, fx.sha.fix]);
+    assert.strictEqual(c.c.text, 'add a dark mode toggle to the header please');
+    assert.strictEqual(mc.pairAt(fx.file, '003', '000'), null);
+    assert.strictEqual(mc.pairAt(fx.file, '000', '099'), null);
+    // the consecutive pair is unchanged and keeps the plain id as its key
+    assert.strictEqual(mc.triples(fx.file)[0].key, undefined);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
 test('standalone, kindOf, isUi', () => {
   assert.ok(mc.standalone('make the late fee five dollars instead of two'));
   for (const t of ['still', 'no not that one please', 'also add a button there', 'it does not work at all']) assert.ok(!mc.standalone(t), t);
