@@ -282,4 +282,35 @@ test('buc-shot parse and render', () => {
   assert.deepStrictEqual(render({ status: 'ok', png: '/t/a.png', url: 'http://h/', engine: 'playwright', findings: ['overlap: a and b'], notes: [] }), ['shot: /t/a.png', 'url: http://h/ (playwright, 1280x800)', 'audit: overlap: a and b']);
 });
 
+test('isUiFile and classesIn', () => {
+  assert.deepStrictEqual(['a.css', 'b.scss', 'c.tsx', 'd.jsx', 'e.vue', 'f.svelte', 'g.html', 'h.ts', 'i.js', 'j.md'].filter(shot.isUiFile), ['a.css', 'b.scss', 'c.tsx', 'd.jsx', 'e.vue', 'f.svelte', 'g.html']);
+  const added = [
+    { file: 'a.tsx', text: '<div className="card card--wide">' },
+    { file: 'a.tsx', text: "<button class='save' className={`cta ${x}`}>" },
+    { file: 'a.tsx', text: 'const n = 1.5; obj.prop = 2;' },
+    { file: 's.css', text: '.price-tag, .banner > .inner {' },
+    { file: 's.css', text: '  margin: 0.5rem;' },
+    { file: 's.scss', text: '.card.wide { color: red; }' },
+  ];
+  assert.deepStrictEqual(shot.classesIn(added), ['card', 'card--wide', 'save', 'cta', 'price-tag', 'banner', 'inner', 'wide']);
+  assert.deepStrictEqual(shot.classesIn([]), []);
+});
+
+test('shotSync returns the CLI result, and "skipped" when it cannot finish in time, with no server left', async () => {
+  const dir = app();
+  const ok = await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(dir), BUC_PLAYWRIGHT: '' }, () => shot.shotSync({ root: dir, audit: true, classes: [], out: path.join(dir, 'sync.png') }));
+  assert.strictEqual(ok.status, 'ok');
+  assert.strictEqual(ok.png, path.join(dir, 'sync.png'));
+  assert.strictEqual(await shot.ping(ok.url), false);
+  const none = await withEnv({ BUC_SHOT_ENGINE: 'none' }, () => shot.shotSync({ root: dir }));
+  assert.strictEqual(none.status, 'skipped');
+  const slow = path.join(dir, 'slow-chrome');
+  fs.writeFileSync(slow, '#!/bin/sh\nfor a in "$@"; do case "$a" in http*) echo "$a" > "$(dirname "$0")/url.txt";; esac; done\nexec sleep 30\n', { mode: 0o755 });
+  const t0 = Date.now();
+  const late = await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: slow, BUC_PLAYWRIGHT: '' }, () => shot.shotSync({ root: dir, timeoutMs: 6500 }));
+  assert.strictEqual(late.status, 'skipped');
+  assert.ok(Date.now() - t0 < 6500, 'the child stops itself before the hard deadline');
+  assert.strictEqual(await shot.ping(fs.readFileSync(path.join(dir, 'url.txt'), 'utf8').trim()), false);
+});
+
 // end
