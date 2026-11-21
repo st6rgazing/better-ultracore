@@ -254,4 +254,20 @@ function rejectCommon(c, ctx) {
   return null;
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon };
+// Correction case: C must be labelled a correction, have its own fix commit, a small diff, and not leak.
+function rejectCorrection(c, ctx) {
+  const common = rejectCommon(c, ctx);
+  if (common) return common;
+  if (c.c.image) return 'C has an image';
+  if (!c.fix) return 'no fix commit after C';
+  if (c.fix === c.base) return 'fix equals base';
+  if (!c.work) return 'no assistant edits after P';
+  if (c.fix_lines === null || c.fix_lines === 0) return 'empty base..fix';
+  if (c.fix_lines > 300) return 'base..fix over 300 lines';
+  const label = (ctx.labels || {})[c.id];
+  if (!label) return 'unlabelled';
+  if (label.label !== 'correction') return `C is not a correction (${label.label})`;
+  return leaks(c, ctx.rules || [], ctx.visible || []);
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection };
