@@ -37,6 +37,21 @@ test('classesInHtml keeps the classes that appear in a class attribute, in any q
   assert.deepStrictEqual(shot.classesInHtml('<i class="a">', undefined), []);
 });
 
+// A stand-in for Chrome: writes a file where --screenshot points and prints the given HTML for --dump-dom.
+function fakeChrome(html = '') {
+  const bin = path.join(tmp('buc-bin-'), 'fake-chrome');
+  const body = `#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "\${a#--screenshot=}";; --dump-dom) cat <<'EOF'\n${html}\nEOF\n;; esac; done\n`;
+  fs.writeFileSync(bin, body, { mode: 0o755 });
+  return bin;
+}
+
+test('domChrome returns what the binary prints for --dump-dom, and nothing for a missing binary', async () => {
+  const html = '<html><body><div class="card wide">hi</div></body></html>';
+  assert.strictEqual((await shot.domChrome(fakeChrome(html), { url: 'http://127.0.0.1:9/' })).trim(), html);
+  assert.strictEqual(await shot.domChrome(fakeChrome(), { url: 'http://127.0.0.1:9/' }), '\n');
+  assert.strictEqual(await shot.domChrome(path.join(tmp('buc-bin-'), 'missing'), { url: 'http://127.0.0.1:9/' }), '');
+});
+
 test('capturePlaywright reports which of the given classes the capture shows, waiting for a late one', { skip: NO_PW }, async () => {
   await withServer(async (url) => {
     const mod = require(playwrightDir());
