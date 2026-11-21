@@ -64,3 +64,15 @@ test('replay records the levers shown on each turn and on the request before a c
     assert.ok(m.intent.per_1k > 0);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('the replay summary lists each lever with its tokens and corrections per 1k', () => {
+  const { summary } = require('../bench/replay');
+  const cov = { corrections: 2, recurring: 1, covered: 1, covered_learned: 1, coverage: 0.5 };
+  const m = { sessions: 1, turns: 4, cluster_calls: 0, rules: 1, coverage: cov, first_half: cov, second_half: cov, decay_regret: { regretted_rules: 0, archived: 0 }, injection: { turns_with_rules: 1, rule_instances: 1, learned_instances: 1 } };
+  const levers = { orchestrate: { turns: 1, tokens: 20, followed: 0, addressed: null, per_1k: null }, intent: { turns: 4, tokens: 400, followed: 2, addressed: 1, per_1k: 2.5 } };
+  const text = summary({ learn: { ...m, levers }, no_byrepo: m, no_learn: m, spent_usd: 0 });
+  assert.match(text, /Lever intent: 4 turns, 400 tokens, 2 corrections after it, 1 of its kind \(2\.50 per 1k tokens/);
+  assert.match(text, /Lever orchestrate: 1 turns, 20 tokens, 0 corrections after it, - of its kind \(- per 1k tokens/);
+  assert.ok(text.indexOf('Lever intent') < text.indexOf('Lever orchestrate'), 'the costliest lever first');
+  assert.doesNotMatch(summary({ learn: m, no_byrepo: m, no_learn: m, spent_usd: 0 }), /Lever/);
+});

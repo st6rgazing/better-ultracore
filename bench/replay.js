@@ -216,6 +216,14 @@ function samplePrecision(run, opts, { n = 120, seed = 10, ...extra } = {}) {
 
 const pct = (x) => (x === null || x === undefined ? '-' : `${(100 * x).toFixed(0)}%`);
 
+// One line per lever of metrics().levers, the costliest first; [] when a run has none.
+function leverLines(levers) {
+  return Object.entries(levers || {}).sort((a, b) => b[1].tokens - a[1].tokens).map(([name, l]) => {
+    const rate = l.per_1k === null ? '-' : l.per_1k.toFixed(2);
+    return `Lever ${name}: ${l.turns} turns, ${l.tokens} tokens, ${l.followed} corrections after it, ${l.addressed ?? '-'} of its kind (${rate} per 1k tokens, an upper bound on corrections avoided)`;
+  });
+}
+
 // The metrics of the three runs as a short text table.
 function summary(result) {
   const row = (name, m) => `| ${name} | ${m.coverage.corrections} | ${m.coverage.recurring} | ${m.coverage.covered} (${pct(m.coverage.coverage)}) | ${m.coverage.covered_learned} | ${m.coverage.confirmed ?? '-'} (${pct(m.coverage.confirmed_coverage)}) | ${pct(m.first_half.coverage)} | ${pct(m.second_half.coverage)} | ${m.rules} | ${m.decay_regret.regretted_rules} of ${m.decay_regret.archived} |`;
@@ -231,6 +239,7 @@ function summary(result) {
     '',
     `Injection: rules shown on ${inj.turns_with_rules} of ${result.learn.turns} turns (${inj.rule_instances} rule showings, ${inj.learned_instances} of learned rules); learned showings judged relevant ${inj.relevant ?? '-'} of ${inj.judged ?? '-'} sampled (${pct(inj.precision)})`,
     ...(day ? [`By day (${day.learn.sessions} units, ${day.learn.cluster_calls} clustering steps): rules shown on ${day.learn.injection.turns_with_rules} turns (${day.learn.injection.learned_instances} showings of learned rules); judged relevant ${day.learn.injection.relevant ?? '-'} of ${day.learn.injection.judged ?? '-'} sampled (${pct(day.learn.injection.precision)})`] : []),
+    ...leverLines(result.learn.levers),
     `Model spend: $${result.spent_usd.toFixed(3)}`,
   ].join('\n');
 }
