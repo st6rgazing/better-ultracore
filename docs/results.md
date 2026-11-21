@@ -28,6 +28,71 @@ Each case is a real past request. It is checked out read-only at the commit befo
 | **buc v8** | **13/24** | 17/24 | **19** | **1.36M** | **$0.52** |
 | ultra (N=1) | 1/8 | 3/8 | 12 | 7.51M | $2.68 |
 
+### v10 to v12 (2026-11-20/21)
+
+Rules in these runs are as-of: only rules learned before each case's date, minus any learned from the case's own session. That removes the leakage in earlier rows, so v10+ is a harsher test.
+
+| Version | First try | Final | Interventions / run | Tokens to accept / run | Cost / run |
+|---|---|---|---|---|---|
+| plain (v9 run) | 11/24 | 23/24 | 0.88 | 1.71M | $0.62 |
+| buc v10 | 12/24 | 21/24 | 0.71 | 1.56M | $0.56 |
+| **buc v11** (N=2) | **12/16** | **16/16** | **0.25** | **0.90M** | **$0.35** |
+
+What changed:
+- **v10:**
+  - The model classifies its own reading (EXACT, FEATURE, SWEEP or SHOW) instead of regexes picking a fixed line. Patterns stay only if measured precise on the user's real prompts.
+  - New Stop checks: undo restored, no test weakening, conflict markers, typecheck errors only in changed files, soft question and wide-diff feedback.
+  - A screenshot helper.
+  - A tool-call budget.
+  - Rule provenance and as-of filtering.
+  - Opt-in per-repo hands-off mode.
+  - The commit habit is scoped to the repo where it was stated.
+- **v10 eval:** two fixed-line patterns misfired on real prompts, so they were retired. "Degree" was correct 0 of 4 times; "sweep" 1 of 2.
+- **v11:** from published methods and from Ultracode complaints in GitHub issues:
+  - An evidence check: "tests pass" or "verified" claims need a matching run after the last edit.
+  - An agent budget: a soft cap, then a hard stop at a ceiling, on usage-limit errors, or on the same brief dispatched three times.
+  - Orchestration lines for an accidental ultracode keyword and for mid-turn messages.
+  - Rules voted up or down by outcome, with eviction (ExpeL style).
+  - Hash-only reflections, promoted to a rule after recurring.
+- **v12:** from an iterative loop on the dev cases:
+  - The Stop screenshot is only handed over when it shows the changed UI.
+  - Soft `sweep-scope` feedback.
+  - Measured on the copy-sweep case: 0/3 → 3/3 first try, 3.09M → 0.77M tokens.
+  - Two further ideas made results worse and were reverted: a misread checklist, and treating "fix these" as still-wrong.
+
+Learning-loop replay (offline, all 41 real sessions): learned rules would have pre-empted 0 of 33 later corrections. The only covered correction came from the stated commit habit. Most of buc's measured gain therefore comes from the intent lines and Stop checks, not from mined rules.
+
+### Held-out test (v11, unseen tasks)
+
+The tasks are mined from the user's other past sessions and repos, never used for tuning, and validated: the accept script fails at base, fails on the agent's wrong version, and passes on the user's real fix. Rules are as-of. N=3. The corpus held only 4 valid correction cases and 3 controls.
+
+| Arm | First try | Final | Interventions | Tokens to accept |
+|---|---|---|---|---|
+| plain, 4 correction cases | 4/12 | 12/12 | 9 | 14.4M |
+| buc v11, 4 correction cases | 4/12 | 12/12 | 9 | 19.6M (+36%) |
+| plain, 2 controls* | 0/6 | 3/6 | 9 | 12.9M |
+| buc v11, 2 controls* | 0/6 | 2/6 | 10 | 17.2M |
+
+\* The third control finished too late to include.
+
+Verdict against the pre-registered criteria: **no measurable gain on unseen tasks, and higher token cost.**
+- The dev-set gains (v11: 12/16 first try) did not transfer, so they were largely tuning to those 8 cases.
+- On one control buc was worse (final 1/3 vs 3/3).
+- With 4 correction cases, a real effect of under about 2 passes cannot be detected either way.
+- Stock Ultracode on these cases did not finish before the run deadline.
+
+### Known flaws and next steps (design review, 2026-11-21)
+
+1. No controlled comparison. The dev gains were measured on the cases the loop tuned on, against an older plain run. Next: the same-run paired plain arm on more held-out cases (needs more corpus).
+2. Two dev cases never pass first try ("show me how", first-screen sound), and they account for all v11 dev interventions.
+3. The revised answer is unchecked. Soft notes, hard blocks and the screenshot share one continuation, so nothing checks the revision.
+4. Stop checks without a measured false-positive rate: sweep-scope, sweep-residue, no-test-weakening.
+5. The evidence check is weak both ways (any command "backs" a test claim), and edit-unrun conflicts with the "do not run the typecheck" line.
+6. Latency: the synchronous Stop typecheck plus screenshot. One simple case averaged 135 s vs plain's 20-30 s.
+7. Code with no measured value: the agent budget never fired on the bench, the learning loop is about a quarter of the code for 0 of 33 corrections pre-empted in replay, and the screenshot helper is large but rarely active. Candidates to delete or put behind opt-in.
+8. Retired regex patterns and README claims that still lead with learning.
+
+
 ### v9: fairer harness, all three arms rerun (N=3)
 
 The harness changed in v9, so v7/v8 rows above are not directly comparable:
