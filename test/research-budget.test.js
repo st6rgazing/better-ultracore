@@ -35,3 +35,13 @@ test('limitError needs an error-shaped response, not a report that mentions limi
   assert.strictEqual(budget.limitError(agent({}, 'All three files updated.')), false);
   assert.strictEqual(budget.limitError(agent({}, undefined)), false);
 });
+
+test('promptKey is the same for the same brief and differs by brief, agent type and tool', () => {
+  const a = budget.promptKey(agent({ prompt: 'Find every caller of  parse()\n' }));
+  assert.match(a, /^[0-9a-f]{12}$/);
+  assert.strictEqual(budget.promptKey(agent({ prompt: 'find every caller of parse()' })), a);
+  assert.notStrictEqual(budget.promptKey(agent({ prompt: 'find every caller of render()' })), a);
+  assert.notStrictEqual(budget.promptKey(agent({ prompt: 'find every caller of parse()', subagent_type: 'Explore' })), a);
+  assert.notStrictEqual(budget.promptKey({ tool_name: 'Workflow', tool_input: { script: 'find every caller of parse()' } }), a);
+  assert.strictEqual(budget.promptKey(agent({})), '');
+});
