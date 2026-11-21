@@ -13,4 +13,11 @@ function rng(seed) {
   };
 }
 
-module.exports = { rng };
+// A row's metric as a number: a key or a function; booleans count as 0 or 1, anything else is missing.
+function value(row, metric) {
+  const v = typeof metric === 'function' ? metric(row) : row[metric];
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+module.exports = { rng, value };

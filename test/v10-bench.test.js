@@ -12,3 +12,10 @@ test('rng is deterministic per seed and stays in [0,1)', () => {
   assert.notStrictEqual(xs[0], c());
   assert.ok(xs.every((x) => x >= 0 && x < 1));
 });
+
+test('value reads keys, functions and booleans', () => {
+  assert.strictEqual(stats.value({ interventions: 2 }, 'interventions'), 2);
+  assert.strictEqual(stats.value({ first_try_pass: true }, 'first_try_pass'), 1);
+  assert.strictEqual(stats.value({ a: 1 }, (r) => r.a + 1), 2);
+  assert.strictEqual(stats.value({}, 'missing'), null);
+});
