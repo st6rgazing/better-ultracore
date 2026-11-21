@@ -2,6 +2,8 @@
 
 A Claude Code plugin that keeps the main session on the task and teaches it your corrections. A hook injects a few learned rules before each prompt, a Stop hook checks the result once, and subagents run only for parallel work or on request. It also ships a CI release preflight.
 
+**Measured status (2026-11-21):** on 8 real dev tasks buc v11 reached 12/16 first-try passes at about half the tokens of plain. On held-out tasks it never saw, it matched plain on passes and corrections, at about 36% more tokens. In an offline replay, learned rules pre-empted 0 of 33 later corrections. See [docs/results.md](docs/results.md) for the numbers, caveats and known flaws.
+
 ## How it works
 
 - **Prompt hook.** Before each prompt, `hooks/inject.js` picks at most 5 matching learned rules (about 200 tokens), adds one line if a named branch is behind origin, and adds the check command. It makes no model call and prints nothing when nothing matches.
