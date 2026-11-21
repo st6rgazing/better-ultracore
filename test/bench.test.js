@@ -75,6 +75,51 @@ test('sim-user: a first-turn question is answered with the real follow-up, which
   assert.deepStrictEqual(plain, ['fix the intro', 'no, read what i asked again']);
 });
 
+test('excludedIds reads the case itself or named cases; dropRules removes only those ids', () => {
+  const { excludedIds, dropRules } = require('../bench/run');
+  assert.deepStrictEqual(excludedIds('', 'no-emoji'), []);
+  assert.deepStrictEqual(excludedIds('self', 'no-emoji'), ['icons-not-emoji']);
+  assert.deepStrictEqual(excludedIds('self', 'trivial'), []);
+  assert.deepStrictEqual(excludedIds('trivial,no-emoji', 'trivial'), ['icons-not-emoji']);
+  assert.throws(() => excludedIds('no-such-case', 'trivial'), /unknown case/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchtest-drop-'));
+  try {
+    const file = path.join(dir, 'rules.json');
+    fs.writeFileSync(file, JSON.stringify([{ id: 'a' }, { id: 'b' }]));
+    assert.deepStrictEqual(dropRules(file, ['b', 'zz']), ['b']);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), [{ id: 'a' }]);
+    assert.deepStrictEqual(dropRules(path.join(dir, 'missing.json'), ['a']), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('fake claude: --exclude-rules-from self hides the case rule from the buc and CLAUDE.md arms', () => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'benchtest-loo-'));
+  try {
+    const log = path.join(parent, 'seen.log');
+    const bin = path.join(parent, 'fake-claude');
+    fs.writeFileSync(bin, `#!/bin/sh\ncat CLAUDE.md "$BUC_HOME/rules.json" >> "${log}" 2>/dev/null\necho '{"session_id":"s","result":"done"}'\n`, { mode: 0o755 });
+    const home = path.join(parent, 'home');
+    fs.mkdirSync(home);
+    fs.copyFileSync(path.join(__dirname, '..', 'bench', 'fixtures', 'rules.json'), path.join(home, 'rules.json'));
+    const out = path.join(parent, 'out.json');
+    const go = (...extra) => {
+      fs.rmSync(log, { force: true });
+      const r = spawnSync('node', [path.join(__dirname, '..', 'bench', 'run.js'), '--arms', 'plain-claudemd,buc', '--cases', 'no-emoji', '--buc-home', home, '--out', out, ...extra],
+        { encoding: 'utf8', env: { ...process.env, BUC_CLAUDE_BIN: bin } });
+      assert.strictEqual(r.status, 0, r.stderr);
+      return { seen: fs.readFileSync(log, 'utf8'), rows: JSON.parse(fs.readFileSync(out, 'utf8')) };
+    };
+    const base = go();
+    assert.match(base.seen, /Never use emoji/);
+    assert.deepStrictEqual(base.rows.map((r) => r.excluded_rules), [[], []]);
+    const loo = go('--exclude-rules-from', 'self');
+    assert.doesNotMatch(loo.seen, /Never use emoji/);
+    assert.match(loo.seen, /Reply tersely/);
+    assert.deepStrictEqual(loo.rows.map((r) => r.excluded_rules), [['icons-not-emoji'], ['icons-not-emoji']]);
+    assert.match(fs.readFileSync(path.join(home, 'rules.json'), 'utf8'), /icons-not-emoji/);
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+});
+
 test('roundEntry keeps the prompt, both ends of a long reply, the accept result and the patch', () => {
   const { roundEntry } = require('../bench/run');
   const diff = { stat: [{ file: 'a.js', added: 2, deleted: 1 }], patch: 'diff --git a/a.js b/a.js' };
