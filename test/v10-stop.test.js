@@ -133,4 +133,27 @@ test('sweepLiteral finds the string a sweep must remove and ignores plain words'
   assert.strictEqual(lit('make every page use the new header'), undefined);
 });
 
+test('sweep-residue reports up to 3 leftover hits on a SWEEP turn and passes when none remain', () => {
+  const dir = repo({ 'a.js': 'log("Sign in");\n', 'b.js': '// Sign in\n', 'c.js': 'x = "Sign in";\n', 'd.js': 'y = "Sign in";\n' });
+  const t = turn(dir, 'rename "Sign in" to "Log in" everywhere', { intent: 'SWEEP' });
+  write(dir, 'a.js', 'log("Log in");\n');
+  const r = run('sweep-residue', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /"Sign in" still appears in 3 places: b\.js:1, c\.js:1, d\.js:1;/);
+  assert.strictEqual(run('sweep-residue', { ...t, intent: 'SELF' }).pass, true);
+  assert.strictEqual(run('sweep-residue', { ...t, intent: undefined }).pass, true);
+  for (const f of ['b.js', 'c.js', 'd.js']) write(dir, f, 'done\n');
+  assert.strictEqual(run('sweep-residue', t).pass, true);
+  write(dir, 'new.js', 'untracked "Sign in"\n');
+  assert.match(run('sweep-residue', t).detail, /1 place: new\.js:1;/);
+});
+
+test('sweep-residue does not count the new name when it contains the old one', () => {
+  const dir = repo({ 'a.js': 'const userId = 1;\n', 'b.js': 'use(user);\n' });
+  const t = turn(dir, 'rename `user` to `userId` in the whole repo', { intent: 'SWEEP' });
+  assert.match(run('sweep-residue', t).detail, /1 place: b\.js:1;/);
+  write(dir, 'b.js', 'use(userId);\n');
+  assert.strictEqual(run('sweep-residue', t).pass, true);
+});
+
 // end
