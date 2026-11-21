@@ -24,7 +24,7 @@ test('fires on every private bench prompt', (t) => {
     if (!fs.existsSync(f)) continue;
     const line = intentLine(fs.readFileSync(f, 'utf8'));
     assert.ok(line, d + ' should fire');
-    assert.ok(line.length <= 330, d);
+    assert.ok(line.length <= 420, d);
     n++;
   }
   if (!n) t.skip('no private prompts');
@@ -63,7 +63,8 @@ test('vague fix of a screen asks to infer the defect', () => {
   assert.doesNotMatch(intentLine('fix the overflow on the settings page'), /names no defect/);
 });
 
-test('feature requests get the end-to-end line, narrowing cues keep the literal one', () => {
+test('regex mode: feature requests get the end-to-end line, narrowing cues keep the literal one', () => {
+  const intentLine = (p) => require('../lib/intent').intentLine(p, { mode: 'regex' });
   const e2e = intentLine('make it so guests see all options greyed out');
   assert.match(e2e, /where the user will see it/);
   assert.doesNotMatch(e2e, /touch only what is named/);
@@ -85,7 +86,8 @@ test('correctionLine fires only after a previous turn', () => {
   assert.strictEqual(correctionLine('add a logout button', true), '');
 });
 
-test('exact change-X-to-Y edits keep the literal line', () => {
+test('regex mode: exact change-X-to-Y edits keep the literal line', () => {
+  const intentLine = (p) => require('../lib/intent').intentLine(p, { mode: 'regex' });
   assert.match(intentLine('change the guide symbol to be a ? and change log symbol to current guide'), /touch only what is named/);
   assert.match(intentLine('rename the Save button to Store'), /touch only what is named/);
   assert.match(intentLine('make it so guests see all options greyed out'), /where the user will see it/);

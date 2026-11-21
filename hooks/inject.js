@@ -9,11 +9,15 @@ const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
 const habits = require('../lib/rules/habits');
-const { intentLine, correctionLine } = require('../lib/intent');
+const { readIntent, intentMode, readCorrection, SELF, SELF_SHORT, HANDSOFF_LINE, isUiPrompt, uiServer, shotLine } = require('../lib/intent');
+const handsoff = require('../lib/handsoff');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
 const MAX_CONTEXT = 800;
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
+// The Stop hook runs the typecheck; telling the agent to run it too doubled the wall time.
+const TYPECHECK_LINE = 'The typecheck runs automatically when you finish; do not run it yourself.';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 const tryGit = (cwd, ...args) => { try { return git(cwd, ...args); } catch { return null; } };
@@ -44,10 +48,12 @@ function hadPreviousTurn(sessionId, transcriptPath) {
   } catch { return false; }
 }
 
-// Fixed lines get at most MAX_FIXED chars so rules keep room; drop in the given order (verify, probe, intent).
+// Fixed lines get at most MAX_FIXED chars so rules keep room. The self-classification line first gives way to its
+// short form; after that lines drop in the given order (typecheck, screenshot, probe, intent).
 const MAX_FIXED = 500;
 function capFixed(fixed, dropOrder) {
   const size = () => fixed.filter(Boolean).join('\n').length;
+  if (size() > MAX_FIXED && fixed.includes(SELF)) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
   for (const line of dropOrder) {
     if (size() <= MAX_FIXED) return;
     const i = line ? fixed.indexOf(line) : -1;
@@ -73,7 +79,7 @@ function run(input) {
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
   const repo = root ? repoKey(root.trim()) : null;
   try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
-  habits.capture(prompt);
+  habits.capture(prompt, repo);
   const { matched: all, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
   const fixed = [];
   if (root) {
@@ -81,25 +87,41 @@ function run(input) {
     const cmd = configuredCmd(root.trim());
     if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
   }
+  // Hands-off repo: every edit prompt gets steps instead of edits, corrections included; only an apply goes through.
+  const handsOff = Boolean(repo) && kind === 'edit' && !handsoff.isApply(prompt) && handsoff.active(repo, { root: root.trim() });
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
-  if (tc) fixed.push(`Verify with ${tc} (not npx); report what you ran.`);
-  const intent = correctionLine(prompt, hadPrev) || intentLine(prompt, { kind });
-  fixed.push(intent, probeLine(prompt));
-  capFixed(fixed, [tc && fixed.find((l) => l.startsWith('Verify with')), fixed[fixed.length - 1], intent]);
+  if (tc && !handsOff) fixed.push(TYPECHECK_LINE);
+  const correction = readCorrection(prompt, hadPrev);
+  const reading = handsOff ? { name: 'HANDSOFF', line: HANDSOFF_LINE } : correction.line ? correction : readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) });
+  const intent = reading.line;
+  // A first-turn UI edit with a dev server to shoot: tell the agent how to look at the result.
+  const shot = root && kind === 'edit' && !handsOff && !correction.line && !handsoff.isApply(prompt) && isUiPrompt(prompt) && uiServer(root.trim()) ? shotLine(PLUGIN_ROOT) : '';
+  const probe = handsOff ? '' : probeLine(prompt);
+  fixed.push(intent, probe, shot);
+  capFixed(fixed, [tc && TYPECHECK_LINE, shot, probe, intent, SELF_SHORT]);
+  // A learned rule is worth more than the long form of the self-classification line.
+  if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
+  // At least the top rule is shown: the typecheck, screenshot and probe lines give way to it, the intent line does not.
+  for (const line of [tc && TYPECHECK_LINE, shot, probe]) {
+    if (!all.length || fit(all, fixed.filter(Boolean)).kept.length) break;
+    if (line && fixed.includes(line)) fixed[fixed.indexOf(line)] = '';
+  }
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
-  if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
+  // Read before saveLastTurn starts the new record: the files the previous turn changed, for the undo check.
+  const prev = sessionId ? store.loadLastTurn(sessionId) : null;
+  if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: store.now() });
   if (sessionId && !root) store.clearTurn(sessionId);
-  if (root) {
+  if (root && sessionId) {
+    // Written on every prompt in a repo, also with no checks: the Stop and tool hooks read intent, ui and the baseline.
     const checked = matched.filter((r) => r.check.cmd);
-    const checks = [...checked.map((r) => r.check.cmd), ...(tc ? ['typecheck'] : [])];
-    if (sessionId && !checks.length) store.clearTurn(sessionId);
-    if (sessionId && checks.length) {
-      store.writeTurn(sessionId, {
-        session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
-        porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
-        rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks,
-      });
-    }
+    const shown = fixed.includes(intent) || (intent === SELF && fixed.includes(SELF_SHORT));
+    store.writeTurn(sessionId, {
+      session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
+      porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
+      rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks: [...checked.map((r) => r.check.cmd), ...(tc ? ['typecheck'] : [])],
+      intent: shown ? reading.name : '', ui: Boolean(shot) && fixed.includes(shot), toolCalls: 0, shotAt: 0,
+      ...(prev && prev.files && { prevFiles: prev.files }),
+    });
   }
   const text = [block, ...fixed].filter(Boolean).join('\n');
   return text ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } } : null;

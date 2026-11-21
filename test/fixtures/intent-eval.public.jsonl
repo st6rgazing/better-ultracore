@@ -1,0 +1,100 @@
+{"id":"d01","prompt":"make the avatar slightly smaller","gold":"exact"}
+{"id":"d02","prompt":"move the logo up a bit","gold":"exact"}
+{"id":"d03","prompt":"can you make the sidebar a little wider","gold":"exact"}
+{"id":"d04","prompt":"the title font should be bigger","gold":"exact","note":"criteria word: stays silent"}
+{"id":"d05","prompt":"make the footer text a tad lighter","gold":"exact"}
+{"id":"d06","prompt":"the gap between the cards is too big, make it tighter","gold":"exact"}
+{"id":"d07","prompt":"make the modal larger","gold":"exact"}
+{"id":"d08","prompt":"slightly round the corners of the buttons","gold":"exact"}
+{"id":"d09","prompt":"make the divider line thinner","gold":"exact"}
+{"id":"d10","prompt":"turn the click sound down a little","gold":"exact"}
+{"id":"d11","prompt":"make the background a touch darker","gold":"exact"}
+{"id":"d12","prompt":"make the toast stay a bit longer on screen","gold":"exact"}
+{"id":"d13","prompt":"make the progress bar narrower on phones","gold":"exact"}
+{"id":"d14","prompt":"add a darker theme people can switch to","gold":"feature","note":"comparative used as a name: a known miss"}
+{"id":"n01","prompt":"only change the title in src/header.js","gold":"exact"}
+{"id":"n02","prompt":"just fix the typo in README.md, nothing else","gold":"exact"}
+{"id":"n03","prompt":"rename the helper in lib/format.ts and don't touch the callers","gold":"exact"}
+{"id":"n04","prompt":"in src/pages/login.tsx swap the two buttons, leave the rest alone","gold":"exact"}
+{"id":"n05","prompt":"only bump the timeout in config/server.json to 30","gold":"exact"}
+{"id":"n06","prompt":"just remove the console.log from app/main.py","gold":"exact"}
+{"id":"n07","prompt":"minimal fix for the null check in utils/parse.go","gold":"exact"}
+{"id":"n08","prompt":"change the port in server.js to 4000, nothing else","gold":"exact"}
+{"id":"n09","prompt":"do not touch the tests, just update the label in components/Nav.vue","gold":"exact"}
+{"id":"n10","prompt":"only the first paragraph of docs/intro.md needs the new product name","gold":"exact"}
+{"id":"s01","prompt":"rename Widget to Gadget everywhere","gold":"sweep"}
+{"id":"s02","prompt":"go through the whole app and drop the beta label","gold":"sweep"}
+{"id":"s03","prompt":"remove all mentions of the old company name","gold":"sweep"}
+{"id":"s04","prompt":"replace the old logo on every page","gold":"sweep"}
+{"id":"s05","prompt":"get rid of all references to the legacy api","gold":"sweep"}
+{"id":"s06","prompt":"use the new date format throughout","gold":"sweep"}
+{"id":"s07","prompt":"delete every occurrence of the debug banner","gold":"sweep"}
+{"id":"s08","prompt":"look through the whole codebase and fix the misspelling of recieve","gold":"sweep"}
+{"id":"s09","prompt":"all instances of colour need to be color","gold":"sweep"}
+{"id":"s10","prompt":"swap the em dashes for commas on every screen","gold":"sweep"}
+{"id":"s11","prompt":"remove all traces of the trial offer","gold":"sweep"}
+{"id":"s12","prompt":"add a search box that looks through the whole site","gold":"feature","note":"sweep phrase describes the feature: a known miss"}
+{"id":"h01","prompt":"explain how the router picks a page","gold":"show"}
+{"id":"h02","prompt":"tell me why the build is slow","gold":"show"}
+{"id":"h03","prompt":"review the login flow and list the problems","gold":"show"}
+{"id":"h04","prompt":"how does the cache get invalidated","gold":"show"}
+{"id":"h05","prompt":"audit the upload handler for unsafe paths","gold":"show"}
+{"id":"h06","prompt":"what does the retry helper do when the server is down","gold":"show"}
+{"id":"h07","prompt":"where is the session cookie read","gold":"show"}
+{"id":"h08","prompt":"inspect the scheduler and tell me what it does on restart","gold":"show"}
+{"id":"h09","prompt":"can you explain the difference between the two queue workers","gold":"show"}
+{"id":"h10","prompt":"tell me how to merge the stylesheets, do not change anything","gold":"show"}
+{"id":"v01","prompt":"fix the settings page","gold":"vague"}
+{"id":"v02","prompt":"can u fix the feedback screen","gold":"vague"}
+{"id":"v03","prompt":"improve this dialog","gold":"vague"}
+{"id":"v04","prompt":"please clean up the signup form","gold":"vague"}
+{"id":"v05","prompt":"redo the main menu","gold":"vague"}
+{"id":"v06","prompt":"tidy up the profile view","gold":"vague"}
+{"id":"v07","prompt":"can you improve the checkout page?","gold":"vague"}
+{"id":"v08","prompt":"fix my export modal","gold":"vague"}
+{"id":"v09","prompt":"pls fix the lobby ui","gold":"vague"}
+{"id":"e01","prompt":"change the help symbol to be a ! and change the history symbol to the current help one","gold":"exact"}
+{"id":"e02","prompt":"rename the Save button to Store","gold":"exact"}
+{"id":"e03","prompt":"set the retry count to 3","gold":"exact"}
+{"id":"e04","prompt":"change the empty list text to Nothing here yet","gold":"exact"}
+{"id":"e05","prompt":"make the fine 2, 4, 6, 8 with 8 as the cap instead","gold":"exact"}
+{"id":"e06","prompt":"theres two mute buttons can u make it just one button","gold":"exact"}
+{"id":"e07","prompt":"fix only 1 and 2","gold":"exact"}
+{"id":"e08","prompt":"swap the order of the two tabs","gold":"exact"}
+{"id":"f01","prompt":"make it so anyone who is not an admin sees every option but cannot edit it, greyed out","gold":"feature"}
+{"id":"f02","prompt":"add a back button to the settings page","gold":"feature"}
+{"id":"f03","prompt":"can you make it so the first screen has a sound","gold":"feature"}
+{"id":"f04","prompt":"let people export their notes as a text file","gold":"feature"}
+{"id":"f05","prompt":"add more tests for the parser","gold":"feature"}
+{"id":"f06","prompt":"add a little icon next to each heading","gold":"feature"}
+{"id":"f07","prompt":"show less text in the report form","gold":"feature"}
+{"id":"f08","prompt":"can you just add a footer","gold":"feature"}
+{"id":"f09","prompt":"dont let hints carry over to the next round","gold":"feature"}
+{"id":"f10","prompt":"add a bit of help text under the password field","gold":"feature"}
+{"id":"f11","prompt":"use and/or in the filter label and wire the filter up","gold":"feature"}
+{"id":"f12","prompt":"add icons to the buttons in the toolbar","gold":"feature"}
+{"id":"o01","prompt":"go ahead","gold":"other"}
+{"id":"o02","prompt":"ok do it","gold":"other"}
+{"id":"o03","prompt":"add a flag, it must print JSON","gold":"other","note":"criteria: stays silent"}
+{"id":"u01","followup":true,"prompt":"still broken on the phone layout","gold":"still"}
+{"id":"u02","followup":true,"prompt":"it doesn't work when i reload","gold":"still"}
+{"id":"u03","followup":true,"prompt":"still not showing up","gold":"still"}
+{"id":"u04","followup":true,"prompt":"no thats not what i meant","gold":"misread"}
+{"id":"u05","followup":true,"prompt":"no, i wanted the other list sorted","gold":"misread"}
+{"id":"u06","followup":true,"prompt":"wrong, i meant the top bar","gold":"misread"}
+{"id":"u07","followup":true,"prompt":"no wait undo ur changes just show me how","gold":"undo-show"}
+{"id":"u08","followup":true,"prompt":"no, revert that and explain the steps instead","gold":"undo-show"}
+{"id":"u09","followup":true,"prompt":"way too big","gold":"overshoot"}
+{"id":"u10","followup":true,"prompt":"not that plain","gold":"overshoot"}
+{"id":"u11","followup":true,"prompt":"tone it down","gold":"overshoot"}
+{"id":"u12","followup":true,"prompt":"now its a bit too loud","gold":"overshoot"}
+{"id":"u13","followup":true,"prompt":"add a logout button","gold":"new-request"}
+{"id":"u14","followup":true,"prompt":"now do the same for the profile page","gold":"new-request"}
+{"id":"u15","followup":true,"prompt":"thanks, next rename the export file","gold":"new-request"}
+{"id":"h11","prompt":"show me where the theme colours are defined","gold":"show"}
+{"id":"h12","prompt":"why does the timer reset between rounds","gold":"show"}
+{"id":"h13","prompt":"suggest ways to speed up the list, dont change anything","gold":"show"}
+{"id":"h14","prompt":"how can i run this on another port","gold":"show"}
+{"id":"h15","prompt":"explain what the debounce in the search box is for","gold":"show"}
+{"id":"h16","prompt":"show me a spinner while the list loads","gold":"feature","note":"show me as a feature verb: a known miss"}
+{"id":"h17","prompt":"audit lib/session.js and list the risks. review only, do not modify any file","gold":"show","note":"only plus a path in a review: must not get the literal line"}

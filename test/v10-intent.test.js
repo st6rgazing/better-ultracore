@@ -1,0 +1,344 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync, spawnSync } = require('node:child_process');
+const intent = require('../lib/intent');
+
+const INJECT = path.join(__dirname, '..', 'hooks', 'inject.js');
+const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+function repo(files = {}) {
+  const dir = tmp('buc-v10-repo-');
+  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'config', 'user.email', 't@example.com');
+  git(dir, 'config', 'user.name', 't');
+  for (const [name, body] of Object.entries({ 'app.js': 'a\n', ...files })) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.writeFileSync(path.join(dir, name), body);
+  }
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-qm', 'init');
+  return dir;
+}
+
+// Runs the prompt hook; returns the injected text ('' when it printed nothing).
+function inject(input, home, env = {}) {
+  const r = spawnSync('node', [INJECT], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, BUC_OFF: '', CLAUDE_PLUGIN_ROOT: '', BUC_HOME: home, ...env } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '';
+}
+const turn = (home, id) => JSON.parse(fs.readFileSync(path.join(home, `turn-${id}.json`), 'utf8'));
+
+test('the misread line has an exit when no other reading fits', () => {
+  const line = intent.correctionLine('no thats not what i meant', true);
+  assert.match(line, /different reading/);
+  assert.match(line, /If no other reading fits the user's words, change nothing: show the exact before and after/);
+  assert.ok(line.length <= 400, String(line.length));
+});
+
+test('the guide-icons and house-rules prompt shapes get the self-classification line', () => {
+  const shapes = [
+    'change the help symbol to be a ! and change the history symbol to the current help one',
+    'make it so anyone who is not an admin sees every option but cannot edit it, greyed out',
+    'rename x in src/a.js',
+    'just one button',
+    'add a back button to the settings page',
+  ];
+  for (const p of shapes) {
+    const r = intent.readIntent(p);
+    assert.strictEqual(r.line, intent.SELF, p);
+    assert.strictEqual(r.name, 'SELF', p);
+    assert.strictEqual(r.pattern, 'self', p);
+  }
+});
+
+test('the self line names the four readings and fits its cap', () => {
+  for (const line of [intent.SELF, intent.SELF_SHORT]) {
+    for (const word of ['EXACT', 'FEATURE', 'SWEEP', 'SHOW']) assert.match(line, new RegExp(`\\b${word} \\(`));
+    assert.match(line, /first line/);
+    assert.match(line, /[Dd]o not ask\.$/);
+  }
+  assert.ok(intent.SELF.length <= 420, String(intent.SELF.length));
+  assert.ok(intent.SELF_SHORT.length <= 250, String(intent.SELF_SHORT.length));
+});
+
+test('precise patterns keep their fixed line', () => {
+  const cases = [
+    ['make the card slightly smaller', 'degree', 'EXACT', /small step only/],
+    ['move the logo up a bit', 'degree', 'EXACT', /Read the request literally/],
+    ['only change the title in src/header.js', 'narrow-path', 'EXACT', /touch only what is named\.$/],
+    ['rename Foo everywhere', 'sweep', 'SWEEP', /every occurrence/],
+    ['explain how the router works', 'show', 'SHOW', /do not edit files/],
+    ['fix the settings page', 'vague', 'FEATURE', /names no defect/],
+  ];
+  for (const [p, pattern, name, re] of cases) {
+    const r = intent.readIntent(p);
+    assert.strictEqual(r.pattern, pattern, p);
+    assert.strictEqual(r.name, name, p);
+    assert.match(r.line, re, p);
+  }
+  assert.strictEqual(intent.readIntent('tell me how to simplify this, dont change anything', { kind: 'advice' }).name, 'SHOW');
+});
+
+test('loose degree and narrowing words no longer choose a line', () => {
+  const loose = ['add more tests', 'add a little icon to the header', 'add a bit of padding', 'show less text in the form', 'fix only 1 and 2', 'can you just add a footer', 'use and/or in the label'];
+  for (const p of loose) assert.strictEqual(intent.readIntent(p).pattern, 'self', p);
+});
+
+test('silent on criteria, long prompts and a bare go-ahead', () => {
+  for (const p of ['', 'add a flag, it must print JSON', Array(70).fill('word').join(' '), 'go ahead', 'ok do it']) {
+    assert.deepStrictEqual(intent.readIntent(p), { name: '', line: '', pattern: '' }, p);
+  }
+});
+
+test('the pattern table is exported with what the eval needs', () => {
+  assert.deepStrictEqual(intent.PRECISE.map((p) => p.id), ['show', 'vague', 'sweep', 'degree', 'narrow-path']);
+  for (const p of intent.PRECISE) {
+    assert.strictEqual(typeof p.test, 'function', p.id);
+    assert.ok(Array.isArray(p.gold) && p.gold.length, p.id);
+    assert.ok(['kind', 'text'].includes(p.on), p.id);
+    assert.ok(p.line('x').length <= 240, p.id);
+  }
+});
+
+test('regex mode restores the v9 lines', () => {
+  const line = (p) => intent.intentLine(p, { mode: 'regex' });
+  assert.match(line('change the help symbol to be a ! and the history symbol to the help one'), /touch only what is named/);
+  assert.match(line('add a back button to the settings page'), /where the user will see it/);
+  assert.match(line('add more tests'), /small step only/);
+  assert.strictEqual(intent.readIntent('add a footer', { mode: 'regex' }).name, 'FEATURE');
+});
+
+test('the hook injects the self line, and BUC_OFF=self or "intent": "regex" restores v9', () => {
+  const p = 'add a back button to the settings page';
+  assert.match(inject({ prompt: p, cwd: repo(), session_id: 'm1' }, tmp('buc-home-')), /Before editing, decide which this is/);
+  const off = inject({ prompt: p, cwd: repo(), session_id: 'm2' }, tmp('buc-home-'), { BUC_OFF: 'self' });
+  assert.match(off, /where the user will see it/);
+  assert.doesNotMatch(off, /decide which this is/);
+  const conf = inject({ prompt: p, cwd: repo({ '.claude/buc.json': '{"intent":"regex"}' }), session_id: 'm3' }, tmp('buc-home-'));
+  assert.match(conf, /where the user will see it/);
+  assert.strictEqual(intent.intentMode(repo()), 'self');
+});
+
+test('a commit habit stated in one repo is not injected in another', () => {
+  const home = tmp('buc-home-');
+  const a = repo();
+  inject({ prompt: 'always commit after each small change', cwd: a, session_id: 'h1' }, home);
+  assert.match(inject({ prompt: 'add a footer', cwd: a, session_id: 'h2' }, home), /Commit after each small completed change/);
+  assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'h3' }, home), /Commit after each small completed change/);
+});
+
+test('a hands-off repo gets the steps line on edit prompts and nothing that asks for edits', () => {
+  const home = tmp('buc-home-');
+  const dir = repo({ 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) });
+  const key = require('../lib/context').repoKey(fs.realpathSync(dir));
+  fs.writeFileSync(path.join(home, 'repos.json'), JSON.stringify({ [key]: { handsOff: 'on', events: [] } }));
+  const ctx = inject({ prompt: 'add a sound when the intro animation plays', cwd: dir, session_id: 'ho1' }, home);
+  assert.strictEqual(ctx, "In this repo the user usually wants the steps, not edits. Do not edit: list exact files, lines and commands, then end with: Say 'apply' and I will make these edits.");
+  const fix = inject({ prompt: 'no thats not what i meant', cwd: dir, session_id: 'ho1' }, home);
+  assert.match(fix, /Do not edit: list exact files/);
+  assert.doesNotMatch(fix, /redo it that way/);
+  for (const p of ['apply', 'ok go ahead']) assert.doesNotMatch(inject({ prompt: p, cwd: dir, session_id: 'ho1' }, home), /Do not edit/, p);
+  assert.match(inject({ prompt: 'explain how the router works', cwd: dir, session_id: 'ho2' }, home), /show or explain/);
+  assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: dir, session_id: 'ho3' }, home, { BUC_OFF: 'handsoff' }), /Do not edit/);
+  assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'ho4' }, home), /Do not edit/);
+});
+
+test('readCorrection names the undo and misread readings', () => {
+  const name = (p) => intent.readCorrection(p, true).name;
+  assert.strictEqual(name('no wait undo ur changes just show me how'), 'UNDO');
+  assert.strictEqual(name('no thats not what i meant'), 'MISREAD');
+  assert.strictEqual(name('still broken'), '');
+  assert.strictEqual(intent.readCorrection('still broken', true).pattern, 'still');
+  assert.strictEqual(intent.readCorrection('way too big', true).pattern, 'overshoot');
+  assert.deepStrictEqual(intent.readCorrection('add a logout button', true), { name: '', line: '', pattern: '' });
+  assert.deepStrictEqual(intent.readCorrection('no thats not what i meant', false), { name: '', line: '', pattern: '' });
+});
+
+test('the turn file is written on every prompt in a repo and names the reading', () => {
+  const home = tmp('buc-home-');
+  const dir = repo();
+  const name = (prompt, id) => { inject({ prompt, cwd: dir, session_id: id }, home); return turn(home, id).intent; };
+  assert.strictEqual(name('add a back button to the settings page', 'n1'), 'SELF');
+  assert.strictEqual(name('make the card slightly smaller', 'n2'), 'EXACT');
+  assert.strictEqual(name('rename Foo everywhere', 'n3'), 'SWEEP');
+  assert.strictEqual(name('explain how the router works', 'n4'), 'SHOW');
+  assert.strictEqual(name('add a flag, it must print JSON', 'n5'), '');
+  assert.strictEqual(name('no thats not what i meant', 'n1'), 'MISREAD');
+  assert.strictEqual(name('no wait undo ur changes just show me how', 'n1'), 'UNDO');
+  const t = turn(home, 'n1');
+  assert.deepStrictEqual([t.checks, t.rules, t.ui, t.toolCalls, t.shotAt], [[], [], false, 0, 0]);
+  assert.strictEqual(t.root, fs.realpathSync(dir));
+  assert.ok(t.head);
+});
+
+test('the turn file carries the files the previous turn changed and resets the tool count', () => {
+  const home = tmp('buc-home-');
+  const dir = repo();
+  const store = path.join(__dirname, '..', 'lib', 'rules', 'store.js');
+  const run = (code) => spawnSync('node', ['-e', code, store], { encoding: 'utf8', env: { ...process.env, BUC_HOME: home } });
+  inject({ prompt: 'add a footer', cwd: dir, session_id: 'pf' }, home);
+  assert.strictEqual(turn(home, 'pf').prevFiles, undefined);
+  const r = run("const s = require(process.argv[1]); s.saveLastTurn('pf', { head: 'abc', files: { 'app.js': 'h1', 'new.js': null } }); s.patchTurn('pf', { toolCalls: 7, shotAt: 5 });");
+  assert.strictEqual(r.status, 0, r.stderr);
+  inject({ prompt: 'no thats not what i meant', cwd: dir, session_id: 'pf' }, home);
+  const t = turn(home, 'pf');
+  assert.deepStrictEqual(t.prevFiles, { 'app.js': 'h1', 'new.js': null });
+  assert.deepStrictEqual([t.toolCalls, t.shotAt], [0, 0]);
+});
+
+test('a hands-off turn is named HANDSOFF in the turn file', () => {
+  const home = tmp('buc-home-');
+  const dir = repo();
+  const key = require('../lib/context').repoKey(fs.realpathSync(dir));
+  fs.writeFileSync(path.join(home, 'repos.json'), JSON.stringify({ [key]: { handsOff: 'on', events: [] } }));
+  inject({ prompt: 'add a footer', cwd: dir, session_id: 'hn' }, home);
+  assert.strictEqual(turn(home, 'hn').intent, 'HANDSOFF');
+  inject({ prompt: 'apply', cwd: dir, session_id: 'hn' }, home);
+  assert.strictEqual(turn(home, 'hn').intent, '');
+});
+
+test('isUiPrompt reads screen words and tells a page header from an HTTP header', () => {
+  for (const p of ['make the card slightly smaller', 'add a back button to the settings page', 'make the header taller', 'change the help symbol to a !', 'grey out the options for guests']) {
+    assert.ok(intent.isUiPrompt(p), p);
+  }
+  for (const p of ['add an auth header to the request', 'fix the off by one in total()', 'rename fooA to alpha in src/a.js', 'bump the version', '<pasted>Settings page</pasted> fix the parser']) {
+    assert.ok(!intent.isUiPrompt(p), p);
+  }
+});
+
+test('uiServer finds a configured server, a playwright config or a local vite', () => {
+  assert.strictEqual(intent.uiServer(repo()), false);
+  assert.strictEqual(intent.uiServer(null), false);
+  assert.strictEqual(intent.uiServer(repo({ '.claude/buc.json': '{"ui":{"dev":"npm run dev"}}' })), true);
+  assert.strictEqual(intent.uiServer(repo({ '.claude/buc.json': '{"ui":{"url":"http://localhost:5173"}}' })), true);
+  assert.strictEqual(intent.uiServer(repo({ 'playwright.config.ts': 'export default {}\n' })), true);
+  assert.strictEqual(intent.uiServer(repo({ 'node_modules/.bin/vite': '#!/bin/sh\n' })), true);
+  assert.strictEqual(intent.uiServer(repo({ 'playwright.config.ts': 'export default {}\n', '.claude/buc.json': '{"ui":false}' })), false);
+  assert.strictEqual(intent.uiServer(repo({ 'playwright.config.ts': 'export default {}\n', '.claude/buc.json': '{"off":["shot"]}' })), false);
+});
+
+test('shotLine names the helper under the plugin root and is empty without it', () => {
+  const plugin = tmp('buc-plugin-');
+  assert.strictEqual(intent.shotLine(plugin), '');
+  assert.strictEqual(intent.shotLine(''), '');
+  fs.mkdirSync(path.join(plugin, 'bin'));
+  fs.writeFileSync(path.join(plugin, 'bin', 'buc-shot'), '');
+  assert.strictEqual(intent.shotLine(plugin), `After editing, run node "${plugin}/bin/buc-shot" --path <route>, Read the PNG once and say what you saw.`);
+});
+
+function plugin() {
+  const dir = tmp('buc-plugin-');
+  fs.mkdirSync(path.join(dir, 'bin'));
+  fs.writeFileSync(path.join(dir, 'bin', 'buc-shot'), '');
+  return dir;
+}
+
+test('the screenshot line is injected only for a UI edit with a resolvable server', () => {
+  const home = tmp('buc-home-');
+  const root = plugin();
+  const env = { CLAUDE_PLUGIN_ROOT: root };
+  const ui = repo({ 'playwright.config.ts': 'export default {}\n' });
+  const ctx = inject({ prompt: 'add a back button to the settings page', cwd: ui, session_id: 'u1' }, home, env);
+  assert.ok(ctx.includes(`After editing, run node "${root}/bin/buc-shot" --path <route>, Read the PNG once and say what you saw.`), ctx);
+  assert.match(ctx, /EXACT \(/);
+  assert.ok(ctx.length <= 500, String(ctx.length));
+  assert.strictEqual(turn(home, 'u1').ui, true);
+  const no = [
+    [{ prompt: 'add a back button to the settings page', cwd: repo(), session_id: 'u2' }, env],
+    [{ prompt: 'fix the off by one in total()', cwd: ui, session_id: 'u3' }, env],
+    [{ prompt: 'explain how the settings page works', cwd: ui, session_id: 'u4' }, env],
+    [{ prompt: 'no thats not what i meant, the button is wrong', cwd: ui, session_id: 'u1' }, env],
+    [{ prompt: 'add a back button to the settings page', cwd: ui, session_id: 'u5' }, { CLAUDE_PLUGIN_ROOT: tmp('buc-plugin-') }],
+    [{ prompt: 'add a back button to the settings page', cwd: ui, session_id: 'u6' }, { ...env, BUC_OFF: 'shot' }],
+  ];
+  for (const [input, e] of no) {
+    assert.doesNotMatch(inject(input, home, e), /buc-shot/, `${input.session_id} ${input.prompt}`);
+    assert.strictEqual(turn(home, input.session_id).ui, false, input.session_id);
+  }
+});
+
+test('every fixed line together stays within 500 chars and the screenshot line goes before the effect probe', () => {
+  const home = tmp('buc-home-');
+  const env = { CLAUDE_PLUGIN_ROOT: plugin() };
+  const dir = repo({ 'playwright.config.ts': 'export default {}\n', 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) });
+  const plain = inject({ prompt: 'add icons to the buttons in the toolbar', cwd: dir, session_id: 'c1' }, home, env);
+  assert.ok(plain.length <= 500, String(plain.length));
+  assert.match(plain, /buc-shot/);
+  assert.match(plain, /Name your reading in your first line/);
+  assert.match(plain, /typecheck runs automatically/);
+  const sound = inject({ prompt: 'add a sound when the intro animation plays', cwd: dir, session_id: 'c2' }, home, env);
+  assert.ok(sound.length <= 500, String(sound.length));
+  assert.match(sound, /runtime effect/);
+  assert.match(sound, /Name your reading in your first line/);
+  assert.doesNotMatch(sound, /buc-shot/);
+  assert.strictEqual(turn(home, 'c2').ui, false);
+  assert.strictEqual(turn(home, 'c2').intent, 'SELF');
+});
+
+test('total injection stays within 800 chars with rules, self line and screenshot line', () => {
+  const home = tmp('buc-home-');
+  const rule = (i) => ({ id: `long-${i}`, rule: `Long rule ${i} ${'x'.repeat(150)}.`, when: { keywords: ['button'], paths: [], promptKinds: [] }, check: {}, kind: 'process', count: 10 - i, last_seen: new Date().toISOString(), violations: 0, pinned: false });
+  fs.writeFileSync(path.join(home, 'rules.json'), JSON.stringify([1, 2, 3, 4, 5].map(rule)));
+  const dir = repo({ 'playwright.config.ts': 'export default {}\n', 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) });
+  const ctx = inject({ prompt: 'add a back button to the settings page', cwd: dir, session_id: 'w1' }, home, { CLAUDE_PLUGIN_ROOT: plugin() });
+  assert.ok(ctx.length <= 800, String(ctx.length));
+  assert.match(ctx, /Long rule 1 /);
+  assert.match(ctx, /first line/);
+});
+
+const evalRows = () => fs.readFileSync(path.join(__dirname, 'fixtures', 'intent-eval.public.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+test('the synthetic eval set is well formed', () => {
+  const rows = evalRows();
+  const request = ['exact', 'feature', 'sweep', 'vague', 'show', 'other'];
+  const followup = ['still', 'misread', 'undo-show', 'overshoot', 'new-request'];
+  assert.strictEqual(new Set(rows.map((r) => r.id)).size, rows.length);
+  for (const r of rows) {
+    assert.ok(r.prompt && r.prompt.split(/\s+/).length <= 60, r.id);
+    assert.ok((r.followup ? followup : request).includes(r.gold), `${r.id} ${r.gold}`);
+  }
+  for (const g of request.slice(0, 5)) assert.ok(rows.filter((r) => r.gold === g).length >= 8, g);
+});
+
+test('every precise pattern passes the gate on the synthetic set', () => {
+  const score = intent.scorePatterns(evalRows());
+  for (const p of intent.PRECISE) {
+    const s = score[p.id];
+    assert.ok(s && s.fires >= 8, `${p.id} fires ${s && s.fires}`);
+    assert.ok(s.precision >= 0.9, `${p.id} precision ${s.precision} wrong ${s.wrong}`);
+  }
+  for (const id of ['still', 'misread', 'undo-show', 'overshoot']) assert.strictEqual(score[id].precision, 1, id);
+  assert.strictEqual(score.self.precision, null);
+  assert.deepStrictEqual(score.degree.wrong, ['d14']);
+});
+
+test('on the synthetic set no exact or feature request gets a wrong fixed line, and new requests get no correction line', () => {
+  const { promptKind } = require('../lib/rules/retrieve');
+  const rows = evalRows();
+  const known = ['d14', 's12', 'h16'];
+  for (const r of rows.filter((x) => !x.followup && x.gold === 'feature' && !known.includes(x.id))) {
+    assert.strictEqual(intent.readIntent(r.prompt, { kind: promptKind(r.prompt) }).pattern, 'self', r.id);
+  }
+  for (const r of rows.filter((x) => !x.followup && x.gold === 'exact')) {
+    assert.ok(['self', 'degree', 'narrow-path', ''].includes(intent.readIntent(r.prompt, { kind: promptKind(r.prompt) }).pattern), r.id);
+  }
+  for (const r of rows.filter((x) => x.gold === 'new-request')) assert.strictEqual(intent.readCorrection(r.prompt, true).line, '', r.id);
+});
+
+test('scorePatterns in regex mode reports fires without precision', () => {
+  const score = intent.scorePatterns(evalRows(), { mode: 'regex' });
+  assert.ok(score.e2e.fires > 0 && score.literal.fires > 0);
+  assert.strictEqual(score.literal.precision, null);
+  assert.strictEqual(score.self, undefined);
+});
+
+test('a review that says "only" and names a file does not get the literal line', () => {
+  const p = 'audit lib/session.js and list the risks. review only, do not modify any file';
+  assert.strictEqual(intent.readIntent(p, { kind: 'edit' }).pattern, 'self');
+  assert.strictEqual(intent.readIntent('only change the title in src/header.js', { kind: 'edit' }).pattern, 'narrow-path');
+});
