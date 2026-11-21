@@ -188,4 +188,27 @@ test('conflict-or-debugger blocks an added conflict marker or debugger statement
   assert.strictEqual(run('conflict-or-debugger', t).pass, true);
 });
 
+test('outputLinesNaming matches a changed file by path, by a tail with a directory, and not by a longer name', () => {
+  const out = ['src/ui/card.tsx(3,1): error TS1', 'ui/card.tsx:9:2 - error TS2', 'other/card.tsx(1,1): error TS3', 'mysrc/ui/card.tsxx: no', '/abs/repo/src/ui/card.tsx: error TS4', 'main.ts(1,1): error', 'xmain.ts(1,1): error'].join('\n');
+  assert.deepStrictEqual(check.outputLinesNaming(out, ['src/ui/card.tsx']), ['src/ui/card.tsx(3,1): error TS1', 'ui/card.tsx:9:2 - error TS2', '/abs/repo/src/ui/card.tsx: error TS4']);
+  assert.deepStrictEqual(check.outputLinesNaming(out, ['main.ts']), ['main.ts(1,1): error']);
+  assert.deepStrictEqual(check.outputLinesNaming(out, []), []);
+});
+
+test('typecheck blocks only when the output names a file changed this turn', () => {
+  const dir = repo();
+  write(dir, '.claude/buc.json', JSON.stringify({ typecheckCmd: 'node tc.js' }));
+  write(dir, 'tc.js', 'console.log("legacy/old.ts(4,2): error TS2304: Cannot find name"); process.exit(2)\n');
+  const t = turn(dir, 'edit app');
+  write(dir, 'app.js', 'changed\n');
+  const ok = run('typecheck', t);
+  assert.strictEqual(ok.pass, true);
+  assert.match(ok.detail, /not in a file changed this turn/);
+  write(dir, 'tc.js', 'console.log("legacy/old.ts(4,2): error TS1\\napp.js(1,1): error TS2322: bad type"); process.exit(2)\n');
+  const r = run('typecheck', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /node tc\.js exit 2: app\.js\(1,1\): error TS2322/);
+  assert.doesNotMatch(r.detail, /legacy/);
+});
+
 // end
