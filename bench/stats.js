@@ -150,6 +150,33 @@ function verdict(results) {
   return 'regression: v10 does not ship';
 }
 
+const num = (x, d = 2) => (x === null || x === undefined ? '-' : x.toFixed(d));
+
+// The full comparison as text: per-arm table, paired intervals, the six criteria with PASS or FAIL, and the verdict.
+// rows are the held-out runs; opts as for criteria().
+function report(rows, { a = 'buc', b = 'plain', regression = [], B = 10000, seed = 10 } = {}) {
+  const paired = new Set(caseDiffs(rows, a, b, () => 1).map((d) => d.case));
+  const held = rows.filter((r) => paired.has(r.case));
+  const out = [`Held-out: ${a} against ${b}, ${paired.size} cases with both arms`, ''];
+  out.push('| arm | runs | first try | final | interventions per run | tokens to accept | cost USD per run | cost USD total |', '|---|---|---|---|---|---|---|---|');
+  for (const arm of [a, b]) {
+    const s = armSummary(held, arm);
+    out.push(`| ${arm} | ${s.runs} | ${s.first_try}/${s.runs} | ${s.final}/${s.runs} | ${num(s.interventions)} | ${num(s.tokens_to_accept, 0)} | ${num(s.cost, 3)} | ${num(s.cost_total)} |`);
+  }
+  out.push('', `Paired bootstrap, ${a} minus ${b}: cases resampled, 90% interval, B=${B}, seed=${seed}`, '', '| metric | difference | low | high | cases |', '|---|---|---|---|---|');
+  for (const [metric, d] of [['interventions', 3], ['first_try_pass', 3], ['tokens_to_accept', 0]]) {
+    const r = pairedBootstrap(held, a, b, metric, { B, seed });
+    out.push(`| ${metric} | ${num(r.diff, d)} | ${num(r.lo, d)} | ${num(r.hi, d)} | ${r.cases} |`);
+  }
+  const unpinned = held.filter((r) => r.arm === a && !r.rules_as_of).length;
+  if (unpinned) out.push('', `Warning: ${unpinned} ${a} runs were not made with --rules-as-of; the criteria assume as-of rules.`);
+  const results = criteria(rows, { a, b, regression, B, seed });
+  out.push('', 'Pre-registered criteria', '');
+  for (const c of results) out.push(`${c.id}. ${c.pass === null ? 'NO DATA' : c.pass ? 'PASS' : 'FAIL'}  ${c.name}: ${c.detail}`);
+  out.push('', `Verdict: ${verdict(results)}`);
+  return out.join('\n');
+}
+
 // CLI: node bench/stats.js <results.json> [--a buc] [--b plain] [--metric interventions] [--B 10000] [--seed 10]
 function main(argv) {
   const f = { a: 'buc', b: 'plain', metric: 'interventions', B: '10000', seed: '10' };
@@ -163,5 +190,5 @@ function main(argv) {
   console.log(JSON.stringify({ a: f.a, b: f.b, metric: f.metric, ...r }));
 }
 
-module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap, armSummary, behindCases, criteria, verdict };
+module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap, armSummary, behindCases, criteria, verdict, report };
 if (require.main === module) main(process.argv.slice(2));

@@ -271,4 +271,21 @@ test('verdict uses the pre-registered wording', () => {
   assert.strictEqual(v(true, true, true, true, null, null), 'incomplete: criteria 5, 6 not evaluated');
 });
 
+test('report prints the table, the intervals, six verdict lines and the wording', () => {
+  const text = stats.report(WIN.map((r) => ({ ...r, rules_as_of: { kept: [] } })), { regression: OLD_OK, B: 500 });
+  assert.match(text, /Held-out: buc against plain, 6 cases with both arms/);
+  assert.match(text, /\| buc \| 18 \| 18\/18 \| 18\/18 \| 0\.00 \| 1000 \| 0\.500 \| 9\.00 \|/);
+  assert.match(text, /\| plain \| 18 \| 10\/18 \|/);
+  assert.match(text, /\| interventions \| -0\.444 \|/);
+  assert.match(text, /\| first_try_pass \| 0\.444 \|/);
+  assert.match(text, /\| tokens_to_accept \| 0 \|/);
+  assert.strictEqual(text.match(/^\d\. PASS {2}/gm).length, 6);
+  assert.match(text, /Verdict: v10 generalises$/);
+  assert.doesNotMatch(text, /Warning/);
+  const open = stats.report(WIN, { B: 500 });
+  assert.match(open, /Warning: 18 buc runs were not made with --rules-as-of/);
+  assert.match(open, /^6\. NO DATA {2}/m);
+  assert.match(open, /Verdict: incomplete: criteria 6 not evaluated$/);
+});
+
 // more tests below
