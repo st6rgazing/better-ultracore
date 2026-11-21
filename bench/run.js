@@ -219,8 +219,10 @@ function asOfHome(c, spec, bucHome, outDir, sourcesFile) {
   if (!spec) return null;
   if (!bucHome) throw new Error('--rules-as-of needs --buc-home <dir>');
   const meta = caseMeta(c);
-  if (spec === 'case' && !(meta && meta.ts)) return null;
-  const before = spec === 'case' ? meta.ts : spec;
+  const byCase = spec === 'case' || spec === 'case-time';
+  if (byCase && !(meta && meta.ts)) return null;
+  const before = byCase ? meta.ts : spec;
+  // 'case-time' keeps what the same session taught before the request; 'case' drops the whole session.
   const sessions = spec === 'case' && meta.session ? [meta.session] : [];
   const src = `${outDir}-src`;
   fs.cpSync(bucHome, src, { recursive: true });
