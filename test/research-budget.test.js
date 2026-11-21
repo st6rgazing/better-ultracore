@@ -24,3 +24,14 @@ test('agentBudget scales the cap with the turn and reads agentBudget from buc.js
   assert.deepStrictEqual(budget.agentBudget({ intent: 'UNDO' }, conf({ small: 1, large: 9, ceiling: 12 })), { cap: 1, ceiling: 12 });
   assert.deepStrictEqual(budget.agentBudget({ intent: 'SELF' }, conf({ large: 30 })), { cap: 30, ceiling: 30 });
 });
+
+const agent = (tool_input = {}, tool_response = 'report') => ({ tool_name: 'Agent', tool_input, tool_response });
+
+test('limitError needs an error-shaped response, not a report that mentions limits', () => {
+  assert.strictEqual(budget.limitError(agent({}, 'You have hit your limit. Resets at 5pm.')), true);
+  assert.strictEqual(budget.limitError(agent({}, { is_error: true, content: [{ type: 'text', text: 'Credit balance is too low' }] })), true);
+  assert.strictEqual(budget.limitError(agent({}, { status: 'failed', error: 'usage limit reached for this account' })), true);
+  assert.strictEqual(budget.limitError(agent({}, `The handler returns 429 when the usage limit is passed. ${'x'.repeat(700)}`)), false);
+  assert.strictEqual(budget.limitError(agent({}, 'All three files updated.')), false);
+  assert.strictEqual(budget.limitError(agent({}, undefined)), false);
+});
