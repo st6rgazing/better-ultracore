@@ -142,3 +142,11 @@ test('parseSession: user text turns in order with the work that followed; harnes
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('transcripts skips temp project dirs', () => {
+  const fx = fixture();
+  try {
+    assert.deepStrictEqual(mc.transcripts(fx.root), [fx.file]);
+    assert.deepStrictEqual(mc.transcripts(fx.root, ['x-app']), []);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

@@ -68,4 +68,16 @@ function parseSession(file) {
   return { turns, end };
 }
 
-module.exports = { relayed, parseSession };
+// Top-level transcripts of real projects; temp, bench and scratch project dirs are skipped, nested subagent files never visited.
+function transcripts(root, skip = []) {
+  const out = [];
+  for (const dir of fs.existsSync(root) ? fs.readdirSync(root).sort() : []) {
+    if (TEMP_DIR.test(dir) || skip.some((s) => dir.includes(s))) continue;
+    const full = path.join(root, dir);
+    if (!fs.statSync(full).isDirectory()) continue;
+    for (const f of fs.readdirSync(full).sort()) if (f.endsWith('.jsonl')) out.push(path.join(full, f));
+  }
+  return out;
+}
+
+module.exports = { relayed, parseSession, transcripts };
