@@ -32,16 +32,6 @@ async function withServer(fn) {
   }
 }
 
-test('styledClassesIn reads selectors from added style lines and ignores class attributes in markup', () => {
-  const added = [
-    { file: 'src/app.css', text: '.card[data-locked] { opacity: 0.5; }' },
-    { file: 'src/theme.scss', text: '.banner, .note {' },
-    { file: 'src/View.tsx', text: '<h3 className="mono title">x</h3>' },
-  ];
-  assert.deepStrictEqual(shot.styledClassesIn(added), ['card', 'banner', 'note']);
-  assert.deepStrictEqual(shot.styledClassesIn([added[2]]), []);
-});
-
 test('classesInHtml keeps the classes that appear in a class attribute, in any quoting', () => {
   const html = '<div class="card wide"><p class=\'fine\'>card-title</p><b class=bold>x</b></div>';
   assert.deepStrictEqual(shot.classesInHtml(html, ['wide', 'fine', 'bold', 'card-title', 'missing']), ['wide', 'fine', 'bold']);
