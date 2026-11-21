@@ -184,4 +184,17 @@ function kindOf(text) {
 
 const isUi = (files) => files.some((f) => UI_FILE.test(f));
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi };
+const STOP = new Set('a an the to of in on for and or it is be this that i u you me my can could would please just make so with at as not no do dont'.split(' '));
+const tokens = (text) => new Set(redact(text).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !STOP.has(w)));
+
+// Jaccard overlap of two texts after redaction and normalisation.
+function jaccard(a, b) {
+  const x = tokens(a);
+  const y = tokens(b);
+  if (!x.size || !y.size) return 0;
+  let both = 0;
+  for (const w of x) if (y.has(w)) both++;
+  return both / (x.size + y.size - both);
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard };
