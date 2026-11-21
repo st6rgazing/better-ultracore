@@ -198,4 +198,24 @@ test('each round records its own tokens, turns and time', () => {
   assert.strictEqual(roundEntry(0, 'x', { result: null }, null, { stat: [], patch: '' }).tokens, null);
 });
 
+const stats = require('../bench/stats');
+
+// Result rows: `first` and `final` are counts of passing runs out of n; interventions and tokens are per run.
+function runs(c, arm, n, { first = n, final = n, interventions = 0, tokens = 1000, cost = 0.5, control = false } = {}) {
+  return Array.from({ length: n }, (_, i) => ({
+    case: c, arm, rep: i + 1, first_try_pass: i < first, final_pass: i < final, control,
+    interventions: i < first ? 0 : interventions || 1, tokens_to_accept: tokens, total_cost_usd: cost,
+  }));
+}
+
+test('armSummary counts passes and averages per run', () => {
+  const rows = [...runs('x', 'buc', 3, { first: 2, final: 3, interventions: 2, tokens: 900, cost: 0.4 }), ...runs('y', 'buc', 3, { first: 3 }), ...runs('x', 'plain', 3, { first: 0 })];
+  const s = stats.armSummary(rows, 'buc');
+  assert.deepStrictEqual([s.runs, s.cases, s.first_try, s.final], [6, 2, 5, 6]);
+  assert.strictEqual(s.interventions, 2 / 6);
+  assert.strictEqual(s.tokens_to_accept, 950);
+  assert.ok(Math.abs(s.cost - 0.45) < 1e-9 && Math.abs(s.cost_total - 2.7) < 1e-9);
+  assert.strictEqual(stats.armSummary(rows, 'ultra').interventions, null);
+});
+
 // more tests below

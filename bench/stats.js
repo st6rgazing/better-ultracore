@@ -65,6 +65,21 @@ function pairedBootstrap(rows, armA, armB, metric, { B = 10000, seed = 10, level
   return { diff: avg, lo: quantile(means, (1 - level) / 2), hi: quantile(means, 1 - (1 - level) / 2), cases: n, B, level, seed };
 }
 
+const avg = (xs) => (xs.length ? xs.reduce((x, y) => x + y, 0) / xs.length : null);
+
+// One arm's headline numbers over its runs: counts of first-try and final passes, and per-run means.
+function armSummary(rows, arm) {
+  const mine = rows.filter((r) => r.arm === arm);
+  const nums = (metric) => mine.map((r) => value(r, metric)).filter((v) => v !== null);
+  const cost = nums('total_cost_usd');
+  return {
+    arm, runs: mine.length, cases: new Set(mine.map((r) => r.case)).size,
+    first_try: mine.filter((r) => r.first_try_pass).length, final: mine.filter((r) => r.final_pass).length,
+    interventions: avg(nums('interventions')), tokens_to_accept: avg(nums('tokens_to_accept')),
+    cost: avg(cost), cost_total: cost.reduce((x, y) => x + y, 0),
+  };
+}
+
 // CLI: node bench/stats.js <results.json> [--a buc] [--b plain] [--metric interventions] [--B 10000] [--seed 10]
 function main(argv) {
   const f = { a: 'buc', b: 'plain', metric: 'interventions', B: '10000', seed: '10' };
@@ -78,5 +93,5 @@ function main(argv) {
   console.log(JSON.stringify({ a: f.a, b: f.b, metric: f.metric, ...r }));
 }
 
-module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap };
+module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap, armSummary };
 if (require.main === module) main(process.argv.slice(2));
