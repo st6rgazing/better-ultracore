@@ -64,6 +64,22 @@ const commands = {
     store.appendInbox(fresh.map((c) => ({ ts: new Date().toISOString(), ...c })));
     console.log(JSON.stringify({ candidates: found.length, appended: fresh.length }));
   },
+  // buc handsoff [on|off|auto] [--cwd dir]: set or show hands-off mode for the repo that contains cwd.
+  handsoff([value, ...rest]) {
+    const f = parseFlags(value && value.startsWith('--') ? [value, ...rest] : rest);
+    const setting = value && !value.startsWith('--') ? value : null;
+    const { execFileSync } = require('node:child_process');
+    const handsoff = require('../lib/handsoff');
+    let root;
+    try {
+      root = execFileSync('git', ['-C', f.cwd || process.cwd(), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      throw new Error('handsoff works per git repo; run it inside one');
+    }
+    const repo = require('../lib/context').repoKey(root);
+    if (setting && !handsoff.set(repo, setting)) throw new Error('could not write repos.json');
+    console.log(JSON.stringify({ repo, setting: require('../lib/rules/store').repoState(repo).handsOff || 'auto', ...handsoff.mode(repo, { root }) }));
+  },
   // buc check --session <id>: run the deterministic checks of the last turn's matched rules; exit 1 on failure.
   check(argv) {
     const f = parseFlags(argv);
@@ -117,7 +133,7 @@ async function main(argv) {
   const [sub, ...rest] = argv;
   if (commands[sub]) return commands[sub](rest);
   if (EXTERNAL[sub] && fs.existsSync(EXTERNAL[sub])) return require(EXTERNAL[sub]).run(rest);
-  console.error('usage: buc classify|context|affected|learn|check|rules|run-headless|preflight [options]');
+  console.error('usage: buc classify|context|affected|learn|check|rules|handsoff|run-headless|preflight [options]');
   process.exitCode = 2;
 }
 

@@ -492,3 +492,20 @@ test('buc rules pin --global drops the repo scope and pins; list shows the scope
   assert.strictEqual(store.loadRules()[0].pinned, false);
   assert.match(buc(['rules', 'pin', '--global', 'nope'], { BUC_HOME: home }).stderr, /no rule nope/);
 });
+
+test('buc handsoff sets and shows the mode of the repo that contains cwd', () => {
+  const home = fresh();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-ho-'));
+  require('node:child_process').execFileSync('git', ['init', '-q', root]);
+  fs.mkdirSync(path.join(root, 'src'));
+  const repo = path.basename(fs.realpathSync(root));
+  const run = (...args) => buc(['handsoff', ...args, '--cwd', path.join(root, 'src')], { BUC_HOME: home, BUC_OFF: '' });
+  assert.deepStrictEqual(JSON.parse(run().stdout), { repo, setting: 'auto', mode: 'auto-idle', events: 0, sessions: 0, edits: 0, ratio: 0 });
+  assert.deepStrictEqual([JSON.parse(run('on').stdout).mode, store.repoState(repo).handsOff], ['on', 'on']);
+  assert.strictEqual(JSON.parse(run('off').stdout).mode, 'off');
+  assert.deepStrictEqual([JSON.parse(run('auto').stdout).mode, JSON.parse(run('auto').stdout).setting], ['auto-idle', 'auto']);
+  const bad = run('sometimes');
+  assert.deepStrictEqual([bad.status, /on, off or auto/.test(bad.stderr)], [1, true]);
+  const outside = buc(['handsoff', 'on', '--cwd', os.tmpdir()], { BUC_HOME: home });
+  if (outside.status !== 0) assert.match(outside.stderr, /per git repo/);
+});
