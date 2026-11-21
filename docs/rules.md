@@ -54,3 +54,38 @@ Per repo, kept in `$BUC_HOME/repos.json` as a setting and a list of event names 
 ## Priority
 
 Enforced policy and permissions, then the current request, then learned rules. The first two are enforced by Claude Code and the prompt, not by this plugin. Rules are advisory text.
+
+## v10 contract for hooks
+
+What `hooks/inject.js`, `hooks/stop-check.js` and `hooks/track.js` may rely on. `repo` is always `context.repoKey(root)`.
+
+| Call | Returns |
+|---|---|
+| `store.now()` | epoch ms; `BUC_NOW` (ISO date or epoch ms) pins it |
+| `store.off(name, root = process.cwd())` | `true` when `name` is in `BUC_OFF` (comma list) or in `"off"` of `<root>/.claude/buc.json` (array or comma list) |
+| `store.repoState(repo)` | `{handsOff?: 'on'\|'off'\|'auto', events: [{e, s, ts}]}`; never throws |
+| `store.recordRepo(repo, event, sessionId, ts = store.now())` | the new state, or `null` when nothing was written; keeps the newest 400 events |
+| `store.setRepo(repo, patch)` | the new state, or `null` |
+| `store.patchTurn(sessionId, patch)` | the merged turn file; creates `{session_id, ...patch}` when there is none |
+| `store.saveLastTurn(sessionId, {rules?, repo?, ts?, head?, files?})` | with `rules` it starts a new record; without, it merges `{head, files}` into the stored one |
+| `store.loadLastTurn(sessionId)` | `{rules, repo, ts, head?, files?}` or `null` |
+| `store.hash(text)` | 12 hex chars of the redacted text |
+| `store.asOf(rules, {before, excludeSessions})` | a new rule list; pure |
+| `store.updateRules(ids, fn)` | applies `fn` to the stored rules with those ids |
+| `handsoff.isStatement(prompt)`, `handsoff.isApply(prompt)` | booleans; never gate a prompt where `isApply` is true |
+| `handsoff.record({prompt, repo, sessionId, kind?, ts?})` | `'handsoff'`, `'apply'`, `'edit'` or `null`. `feedback.onPrompt` already calls it once per prompt |
+| `handsoff.mode(repo, {now?, root?})` | `{mode, events, sessions, edits, ratio}`, `mode` one of `'on'`, `'off'`, `'auto-active'`, `'auto-idle'` |
+| `handsoff.active(repo, opts)` | `true` for `'on'` and `'auto-active'` |
+| `handsoff.set(repo, 'on'\|'off'\|'auto')` | the new state; throws on another value |
+| `habits.capture(prompt, repo)` | ids of the habits stated; pass `repo` (or `null` outside a git repo) |
+| `retrieve.matches(rule, text, kind, words, repo)` | honours `rule.scope.repos`; `retrieve({..., repo})` passes it through |
+
+Turn-file fields added in v10, all optional (a missing one means unknown):
+
+| Field | Type | Written by | Meaning |
+|---|---|---|---|
+| `intent` | string | prompt hook | the reading chosen: `EXACT`, `FEATURE`, `SWEEP`, `SHOW`, `SELF`, `UNDO`, `MISREAD`, `HANDSOFF` or empty |
+| `ui` | boolean | prompt hook | a UI prompt with a resolvable dev server |
+| `toolCalls` | number | tool hook | tool calls so far this turn; a new prompt resets it |
+| `shotAt` | number | `buc-shot` or the Stop hook | epoch ms of the last screenshot this turn |
+| `prevFiles` | object | prompt hook | `files` of the last-turn record: each path the previous turn changed, mapped to its content hash before that turn (`null` when it did not exist) |
