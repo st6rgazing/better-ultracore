@@ -93,4 +93,18 @@ function repoOf(cwd) {
   return repoCache.get(cwd);
 }
 
-module.exports = { relayed, parseSession, transcripts, repoOf };
+// SHAs by timestamp on one ref. base: last commit before P. wrong: first commit between P and C.
+// fix: last commit after C and before N. done: last commit after P and before C (what a control keeps).
+function resolveShas(repo, ref, p, c, n) {
+  const last = (before) => git(repo, 'rev-list', '-1', `--before=${before}`, ref);
+  const when = (sha) => (sha ? new Date(git(repo, 'show', '-s', '--format=%cI', sha)).getTime() : 0);
+  const base = last(p) || null;
+  const between = git(repo, 'rev-list', '--reverse', `--after=${p}`, `--before=${c}`, ref).split('\n').filter(Boolean);
+  const wrong = between[0] || null;
+  const done = between[between.length - 1] || null;
+  let fix = n ? last(n) || null : null;
+  if (fix && when(fix) <= new Date(c).getTime()) fix = null;
+  return { base, wrong, fix, done };
+}
+
+module.exports = { relayed, parseSession, transcripts, repoOf, resolveShas };
