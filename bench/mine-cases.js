@@ -349,4 +349,22 @@ function sample(cands, { seed = 10, quotas = DEFAULT_QUOTAS, skip = [], avoid = 
   return picked;
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, DEFAULT_QUOTAS };
+const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+// Step 4: the mechanical files of a case. accept.sh and solve-notes.md are written by hand afterwards.
+// wrong.sh restores the last commit before C, the state the correction reacted to; the first commit after P
+// is kept in case.json as first_after_p.
+function writeCase(dir, c, { deps } = {}) {
+  fs.mkdirSync(dir, { recursive: true });
+  const fix = c.control ? c.done : c.fix;
+  const wrong = c.control ? null : c.done;
+  const put = (name, body, mode) => fs.writeFileSync(path.join(dir, name), body, mode ? { mode } : undefined);
+  put('prompt.txt', `${c.p.text}\n`);
+  if (!c.control) put('followup.txt', `${c.c.text}\n`);
+  put('case.json', `${JSON.stringify({ repo: c.repo, base: c.base, wrong, first_after_p: c.wrong, fix, session: c.session, ts: c.p.ts, control: !!c.control, kind: c.kind || null, ui: !!c.ui }, null, 2)}\n`);
+  put('setup.sh', `#!/bin/sh\nset -e\ngit clone --quiet ${sq(c.repo)} "$1"\ngit -C "$1" checkout --quiet ${c.base}\n${deps ? `sh ${sq(deps)} ${sq(c.repo)} "$1"\n` : ''}`, 0o755);
+  put('solve.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${fix} -- .\n`, 0o755);
+  if (wrong && wrong !== fix) put('wrong.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${wrong} -- .\n`, 0o755);
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, DEFAULT_QUOTAS };
