@@ -9,7 +9,7 @@
 | Stop-hook revision | 1 | Enforced. The hook never blocks and never adds feedback when `stop_hook_active` is true; remaining failures are shown to the user. A block and a soft note both use up the one continuation. |
 | deterministic rule checks | per rule | Enforced by the Stop hook for the built-in check ids only. |
 | built-in hard checks | on | Enforced: the Stop hook blocks once. `undo-restored`, `handsoff-no-edits`, `sweep-residue`, `no-test-weakening`, `conflict-or-debugger`. They run on every turn that has a baseline in the turn file, with no rule needed. |
-| built-in soft checks | on | Advisory: returned as Stop `additionalContext`, never a `decision`. `ended-with-question`, `wide-diff`. |
+| built-in soft checks | on | Advisory: returned as Stop `additionalContext`, never a `decision`. `ended-with-question`, `wide-diff`, `sweep-scope`. |
 | typecheck | on when the repo has the script | Blocks only when the output names a file changed this turn. A failure elsewhere passes with a note. |
 | switching a check off | n/a | Each check id is a `BUC_OFF` name (comma list), also `"off"` in `.claude/buc.json`. `shot` turns off the Stop screenshot, `budget` the tool-call notice. |
 | tool-call budget | 20 or 45 | Advisory. `hooks/track.js` on `PostToolBatch` counts tool calls per turn and says so once at the budget and once at twice it: 20 on a turn with a fixed reading or a correction, 45 otherwise. `"toolBudget"` in `.claude/buc.json`: a number, `{small, large}` or `false`. Subagent calls are not counted. Nothing is stopped. |
@@ -30,6 +30,7 @@
 | `conflict-or-debugger` | hard | An added line starts with a conflict marker, or a `debugger` statement was added to a script file. |
 | `ended-with-question` | soft | An edit prompt of at most 25 words with no destructive word, nothing changed, and the reply ends in `?`. |
 | `wide-diff` | soft | The intent is `EXACT` or `LITERAL` and the turn changed over 5 files or 150 lines, tests and lock files aside. |
+| `sweep-scope` | soft | An edit prompt with whole-scope words (`whole app`, `everywhere`, `all traces`, `every page` and the like, pasted blocks aside) changed 1 or 2 files, tests and lock files aside, or the end of the reply offers left-out work back (`say if you want`, `do you want me to`). A turn that changed nothing passes. |
 
 Known gaps: a file that was already dirty when the turn began and was edited again is not seen as changed; `sweep-residue` cannot tell an intended leftover (a changelog entry) from a missed one, so its message allows a one-line reason.
 
