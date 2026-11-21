@@ -179,11 +179,16 @@ function liveRun(c, arm, rep, o) {
     const prompt = read(c, 'prompt.txt');
     const base = (spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim();
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
-    const call = (p, extra = {}) => claudeCall(p, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env, ...extra });
+    const sent = [];
+    const call = (p, extra = {}) => { sent.push(p); return claudeCall(p, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env, ...extra }); };
     const runs = [];
+    // Audit trail: one entry per agent call, snapshotted before the next call can change the repo.
+    const rounds = [];
+    const snap = (pass) => rounds.push(roundEntry(rounds.length, sent[runs.length - 1], runs[runs.length - 1], pass, patchOf(dir, preUntracked, base)));
     let corrections = 0;
     if (has(c, 'correction.txt')) {
       runs.push(call(prompt, { timeoutMin: o.timeoutMin / 3 }));
+      snap(null);
       runs.push(call(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`));
       corrections = 1;
     } else {
@@ -193,7 +198,9 @@ function liveRun(c, arm, rep, o) {
     const accept = () => {
       const last = runs[runs.length - 1];
       fs.writeFileSync(path.join(parent, 'result.txt'), typeof last.result === 'string' ? last.result : '');
-      return sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
+      const pass = sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
+      snap(pass);
+      return pass;
     };
     const sid = () => [...runs].reverse().map((r) => r.session_id).find(Boolean);
     const sim = simulate({
@@ -226,6 +233,7 @@ function liveRun(c, arm, rep, o) {
       subagents: sum((r) => r.subagent_stats && r.subagent_stats.spawned),
       interventions,
       result_excerpt: typeof last.result === "string" ? last.result.slice(0, 600) : null,
+      rounds,
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }

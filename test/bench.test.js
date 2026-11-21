@@ -46,6 +46,9 @@ test('fake claude: resume round runs and counts an intervention', () => {
     assert.strictEqual(row.final_pass, false);
     assert.strictEqual(row.interventions, 2);
     assert.strictEqual(row.tokens_to_accept, 21);
+    assert.deepStrictEqual(row.rounds.map((x) => [x.round, x.accept_pass, x.reply_excerpt]), [[0, false, 'done'], [1, false, 'done'], [2, false, 'done']]);
+    assert.strictEqual(row.rounds[1].prompt, 'no, read what i asked again');
+    assert.deepStrictEqual(row.rounds[2].files_changed, []);
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
 });
 
