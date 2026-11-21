@@ -53,6 +53,8 @@ const commands = {
     console.log(JSON.stringify({ since: f.since || null, rerun, keep: steps.map((s) => s.id).filter((id) => !rerun.includes(id)) }));
   },
   // buc learn [--projects-root dir] [--dry-run]: collect corrective user turns for /buc learn clustering.
+  // Each candidate is {session_id, text, repo, h, ts}. Without --dry-run they are queued in the inbox, which is where
+  // `buc rules import` looks up a rule's `sources: [h]`.
   learn(argv) {
     const f = parseFlags(argv);
     const root = f['projects-root'] || path.join(os.homedir(), '.claude', 'projects');
@@ -61,7 +63,7 @@ const commands = {
     const store = require('../lib/rules/store');
     const known = new Set(store.readInbox().map((i) => i.text.toLowerCase()));
     const fresh = found.filter((c) => !known.has(c.text.toLowerCase()));
-    store.appendInbox(fresh.map((c) => ({ ts: new Date().toISOString(), ...c })));
+    store.appendInbox(fresh.map((c) => ({ ts: new Date(store.now()).toISOString(), ...c })));
     console.log(JSON.stringify({ candidates: found.length, appended: fresh.length }));
   },
   // buc handsoff [on|off|auto] [--cwd dir]: set or show hands-off mode for the repo that contains cwd.

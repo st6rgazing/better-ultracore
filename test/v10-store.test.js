@@ -509,3 +509,24 @@ test('buc handsoff sets and shows the mode of the repo that contains cwd', () =>
   const outside = buc(['handsoff', 'on', '--cwd', os.tmpdir()], { BUC_HOME: home });
   if (outside.status !== 0) assert.match(outside.stderr, /per git repo/);
 });
+
+test('buc learn queues candidates with provenance and rules import resolves sources given as hashes', () => {
+  const home = fresh();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-proj-'));
+  fs.mkdirSync(path.join(root, '-Users-me-myrepo'));
+  transcript(path.join(root, '-Users-me-myrepo'), 's.jsonl', [
+    userTurn('S1', 'add a header', '2026-06-01T10:00:00.000Z', '/gone/away/myrepo'),
+    userTurn('S1', 'no, only the header', '2026-06-01T10:05:00.000Z', '/gone/away/myrepo'),
+  ]);
+  const h = store.hash('no, only the header');
+  const dry = JSON.parse(buc(['learn', '--dry-run', '--projects-root', root], { BUC_HOME: home }).stdout);
+  assert.deepStrictEqual(dry, [{ session_id: 'S1', text: 'no, only the header', repo: 'myrepo', h, ts: '2026-06-01T10:05:00.000Z' }]);
+  assert.deepStrictEqual(store.readInbox(), []);
+  assert.deepStrictEqual(JSON.parse(buc(['learn', '--projects-root', root], { BUC_HOME: home }).stdout), { candidates: 1, appended: 1 });
+  const file = path.join(home, 'new-rules.json');
+  fs.writeFileSync(file, JSON.stringify([{ ...RULE, sources: [h] }]));
+  assert.strictEqual(buc(['rules', 'import', file], { BUC_HOME: home }).status, 0);
+  const [r] = store.loadRules();
+  assert.deepStrictEqual([r.origin, r.sources], ['learn', [{ session: 'S1', repo: 'myrepo', ts: '2026-06-01T10:05:00.000Z', h }]]);
+  assert.ok(!fs.readFileSync(path.join(home, 'rules.json'), 'utf8').includes('header'));
+});
