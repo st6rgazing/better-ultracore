@@ -245,4 +245,27 @@ test('wide-diff fires on a literal turn over 5 files or 150 lines, and not on ot
   assert.match(run('wide-diff', t).detail, /^1 files and 200 lines changed/);
 });
 
+test('checkSession runs every built-in check on a turn with a baseline, marks soft ones, and each has a BUC_OFF name', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  const ids = ['undo-restored', 'handsoff-no-edits', 'sweep-residue', 'no-test-weakening', 'conflict-or-debugger', 'ended-with-question', 'wide-diff'];
+  assert.deepStrictEqual(Object.keys(check.BUILTIN), ids);
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => {
+    store.writeTurn('s', turn(dir, 'make the header blue'));
+    write(dir, 'app.js', 'function f() {\n  debugger;\n}\n');
+    const res = check.checkSession('s', {});
+    assert.deepStrictEqual(res.map((r) => r.id), ids);
+    assert.deepStrictEqual(res.filter((r) => r.soft).map((r) => r.id), ['ended-with-question', 'wide-diff']);
+    assert.deepStrictEqual(res.filter((r) => !r.pass).map((r) => r.id), ['conflict-or-debugger']);
+    const { porcelain, ...noBase } = turn(dir, 'x');
+    store.writeTurn('nobase', noBase);
+    assert.deepStrictEqual(check.checkSession('nobase', {}), []);
+  });
+  for (const id of ids) {
+    withEnv({ BUC_HOME: home, BUC_OFF: `x, ${id}` }, () => assert.ok(!check.checkSession('s', {}).some((r) => r.id === id), id));
+  }
+  write(dir, '.claude/buc.json', JSON.stringify({ off: ['conflict-or-debugger'] }));
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => assert.ok(check.checkSession('s', {}).every((r) => r.pass)));
+});
+
 // end
