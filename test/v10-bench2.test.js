@@ -663,5 +663,3 @@ test('intent eval CLI: build writes labelled rows to a private path, score print
     assert.ok(!fs.existsSync(path.join(ROOT, 'bench', 'intent-eval.jsonl')));
   } finally { for (const d of [root, work]) fs.rmSync(d, { recursive: true, force: true }); }
 });
-
-// more tests below
