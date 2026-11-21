@@ -427,13 +427,14 @@ function main(argv) {
     rulesAsOf: f['rules-as-of'] || '', ruleSources: f['rule-sources'] && path.resolve(f['rule-sources']) };
   if (o.rulesAsOf && !o.bucHome) throw new Error('--rules-as-of needs --buc-home <dir>');
   const rows = [];
+  const out = f.out || path.join(__dirname, 'results', `${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   for (const c of cases) for (const arm of arms) for (let rep = 1; rep <= parseInt(f.n, 10); rep++) {
     console.error(`run ${c} ${arm} #${rep}`);
     rows.push(liveRun(c, arm, rep, o));
+    // Written after every run, so a long bench that dies keeps what it has.
+    fs.writeFileSync(out, JSON.stringify(rows, null, 2));
   }
-  const out = f.out || path.join(__dirname, 'results', `${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify(rows, null, 2));
   console.log(table(rows));
   console.error(`wrote ${out}`);
 }
