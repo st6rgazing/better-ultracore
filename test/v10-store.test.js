@@ -210,3 +210,15 @@ test('handsoff.record feeds mode through real prompts', () => {
   rec('go ahead', 'b', 4);
   assert.strictEqual(modeAt('r', 5).mode, 'auto-idle');
 });
+
+test('handsoff.set stores the setting and active follows mode', () => {
+  fresh();
+  assert.strictEqual(handsoff.active('r'), false);
+  assert.strictEqual(handsoff.set('r', 'on').handsOff, 'on');
+  assert.strictEqual(handsoff.active('r'), true);
+  handsoff.set('r', 'off');
+  assert.strictEqual(handsoff.active('r'), false);
+  handsoff.set('r', 'auto');
+  assert.strictEqual(handsoff.mode('r').mode, 'auto-idle');
+  assert.throws(() => handsoff.set('r', 'maybe'), /on, off or auto/);
+});
