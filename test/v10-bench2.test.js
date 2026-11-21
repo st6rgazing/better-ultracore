@@ -412,14 +412,14 @@ test('replay: a recurring correction is covered with learning and not without', 
 
 test('replay metrics: coverage, halves, injection and decay regret', () => {
   const { metrics, coverage } = require('../bench/replay');
-  const corr = (covered, bump, regret = []) => ({ covered: covered.map((id) => ({ id })), would_bump: bump, regret });
+  const corr = (covered, bump, regret = []) => ({ covered: covered.map((id) => ({ id, origin: id === 'b' ? 'habit' : 'learn' })), would_bump: bump, regret });
   const c = [corr([], []), corr([], ['a']), corr(['a'], ['a']), corr(['a', 'b'], ['a', 'b']), corr([], [], ['old'])];
   const run = { sessions: 4, turns: 20, corrections: c, cluster_calls: 1, rules: [{ id: 'a' }, { id: 'b' }], archived: ['old', 'older'],
-    injections: [{ rules: [{ id: 'a' }] }, { rules: [{ id: 'a' }, { id: 'b' }] }] };
+    injections: [{ rules: [{ id: 'a' }] }, { rules: [{ id: 'a' }, { id: 'b', origin: 'habit' }] }] };
   const m = metrics(run, { confirmed: new Set([c[2]]), relevant: { sampled: 3, yes: 2 } });
-  assert.deepStrictEqual(m.coverage, { corrections: 5, recurring: 3, covered: 2, coverage: 0.4, of_recurring: 2 / 3, confirmed: 1, confirmed_coverage: 0.2 });
+  assert.deepStrictEqual(m.coverage, { corrections: 5, recurring: 3, covered: 2, covered_learned: 2, coverage: 0.4, of_recurring: 2 / 3, confirmed: 1, confirmed_coverage: 0.2 });
   assert.deepStrictEqual([m.first_half.corrections, m.first_half.covered, m.second_half.corrections, m.second_half.covered], [3, 1, 2, 1]);
-  assert.deepStrictEqual(m.injection, { turns_with_rules: 2, share_of_turns: 0.1, rule_instances: 3, followed_by_matching_correction: 3, judged: 3, relevant: 2, precision: 2 / 3 });
+  assert.deepStrictEqual(m.injection, { turns_with_rules: 2, share_of_turns: 0.1, rule_instances: 3, learned_instances: 2, followed_by_matching_correction: 3, judged: 3, relevant: 2, precision: 2 / 3 });
   assert.deepStrictEqual(m.decay_regret, { archived: 2, regretted_rules: 1, corrections: 1 });
   assert.strictEqual(coverage([]).coverage, null);
   assert.doesNotMatch(JSON.stringify(metrics(run)), /text|prompt|request/);
@@ -446,7 +446,7 @@ test('replay model steps: clustering, the yes/no judge and its two uses', () => 
   const c1 = { request: 'add icons', text: 'no emoji', covered: [{ id: 'a', rule: 'No emoji.' }] };
   const c2 = { request: 'add a footer', text: 'no, smaller', covered: [{ id: 'b', rule: 'Commit often.' }] };
   const c3 = { request: 'x', text: 'y', covered: [] };
-  const run = { corrections: [c1, c2, c3], injections: [{ prompt: 'add icons', rules: [{ id: 'a', rule: 'No emoji.' }, { id: 'b', rule: 'Commit often.' }] }, { prompt: 'fix it', rules: [{ id: 'b', rule: 'Commit often.' }] }] };
+  const run = { corrections: [c1, c2, c3], injections: [{ prompt: 'add icons', rules: [{ id: 'a', rule: 'No emoji.' }, { id: 'b', rule: 'Commit often.' }] }, { prompt: 'fix it', rules: [{ id: 'b', rule: 'Commit often.' }, { id: 'h', rule: 'Stated habit.', origin: 'habit' }] }] };
   const confirmed = confirmCoverage(run, {}, { askFn: yesFor('emoji') });
   assert.ok(confirmed.has(c1) && !confirmed.has(c2) && confirmed.size === 1);
   assert.deepStrictEqual(samplePrecision(run, {}, { n: 10, askFn: yesFor('emoji') }), { sampled: 3, yes: 1, of: 3 });
@@ -476,7 +476,7 @@ test('replay CLI runs the three replays with a stand-in model and writes numbers
     const r = spawnSync('node', [path.join(ROOT, 'bench', 'replay.js'), '--cache', cache, '--projects-root', root, '--every', '2'], { encoding: 'utf8', env: { ...process.env, BUC_CLAUDE_BIN: bin } });
     assert.strictEqual(r.status, 0, r.stderr);
     assert.match(r.stdout, /Replay: 3 sessions, 5 user turns, 1 clustering steps/);
-    assert.match(r.stdout, /\| learning \| 2 \| 1 \| 1 \(50%\) \| 1 \(50%\) \| 0% \| 100% \| 1 \|/);
+    assert.match(r.stdout, /\| learning \| 2 \| 1 \| 1 \(50%\) \| 1 \| 1 \(50%\) \| 0% \| 100% \| 1 \|/);
     assert.match(r.stdout, /\| no learning \| 2 \| 0 \| 0 \(0%\)/);
     assert.match(r.stdout, /judged relevant 2 of 2 sampled \(100%\)/);
     const saved = fs.readFileSync(path.join(cache, 'replay-metrics.json'), 'utf8');

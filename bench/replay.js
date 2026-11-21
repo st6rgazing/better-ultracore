@@ -83,8 +83,8 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
         }
         inject.run({ prompt: t.text, cwd: t.cwd || s.cwd, session_id: s.session, transcript_path: '' });
         const last = store.loadLastTurn(s.session);
-        const text = new Map(store.loadRules().map((r) => [r.id, r.rule]));
-        const rules = (last && Array.isArray(last.rules) ? last.rules : []).map((id) => ({ id, rule: text.get(id) || '' }));
+        const byId = new Map(store.loadRules().map((r) => [r.id, r]));
+        const rules = (last && Array.isArray(last.rules) ? last.rules : []).map((id) => ({ id, rule: (byId.get(id) || {}).rule || '', origin: (byId.get(id) || {}).origin || '' }));
         if (rules.length) injections.push({ session: s.session, idx: t.idx, ts: t.ts, prompt: t.text, rules });
         prev = { text: t.text, rules };
       }
@@ -124,7 +124,9 @@ const share = (n, d) => (d ? n / d : null);
 function coverage(list, confirmed = null) {
   const covered = list.filter((c) => c.covered.length).length;
   const recurring = list.filter((c) => c.would_bump.length).length;
-  const out = { corrections: list.length, recurring, covered, coverage: share(covered, list.length), of_recurring: share(covered, recurring) };
+  // A habit the user stated outright is not something the loop learned; covered_learned leaves those out.
+  const learned = list.filter((c) => c.covered.some((r) => r.origin !== 'habit')).length;
+  const out = { corrections: list.length, recurring, covered, covered_learned: learned, coverage: share(covered, list.length), of_recurring: share(covered, recurring) };
   if (confirmed) {
     out.confirmed = list.filter((c) => confirmed.has(c)).length;
     out.confirmed_coverage = share(out.confirmed, list.length);
@@ -145,6 +147,7 @@ function metrics(run, { confirmed = null, relevant = null } = {}) {
     coverage: coverage(c, confirmed), first_half: coverage(c.slice(0, half), confirmed), second_half: coverage(c.slice(half), confirmed),
     injection: {
       turns_with_rules: run.injections.length, share_of_turns: share(run.injections.length, run.turns), rule_instances: instances,
+      learned_instances: run.injections.reduce((n, x) => n + x.rules.filter((r) => r.origin !== 'habit').length, 0),
       // Without a judge the only offline signal: shown rules that the next correction went on to mention.
       followed_by_matching_correction: c.reduce((n, x) => n + x.covered.length, 0),
       ...(relevant && { judged: relevant.sampled, relevant: relevant.yes, precision: share(relevant.yes, relevant.sampled) }),
@@ -193,9 +196,10 @@ function confirmCoverage(run, opts, extra) {
   return new Set(pairs.filter((p, i) => yes[i]).map((p) => p.c));
 }
 
-// Injection precision on a seeded sample of (request, shown rule) pairs: metrics({relevant}).
+// Injection precision on a seeded sample of (request, shown learned rule) pairs: metrics({relevant}). Stated habits
+// are pinned by the user and left out.
 function samplePrecision(run, opts, { n = 120, seed = 10, ...extra } = {}) {
-  const all = run.injections.flatMap((x) => x.rules.map((r) => ({ request: clip(x.prompt), rule: r.rule })));
+  const all = run.injections.flatMap((x) => x.rules.filter((r) => r.origin !== 'habit').map((r) => ({ request: clip(x.prompt), rule: r.rule })));
   const next = require('./stats').rng(seed);
   for (let i = all.length - 1; i > 0; i--) { const j = Math.floor(next() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; }
   const answers = judge(all.slice(0, n), Q_RELEVANT, opts, extra).filter((v) => v !== null);
@@ -206,16 +210,16 @@ const pct = (x) => (x === null || x === undefined ? '-' : `${(100 * x).toFixed(0
 
 // The metrics of the three runs as a short text table.
 function summary(result) {
-  const row = (name, m) => `| ${name} | ${m.coverage.corrections} | ${m.coverage.recurring} | ${m.coverage.covered} (${pct(m.coverage.coverage)}) | ${m.coverage.confirmed ?? '-'} (${pct(m.coverage.confirmed_coverage)}) | ${pct(m.first_half.coverage)} | ${pct(m.second_half.coverage)} | ${m.rules} | ${m.decay_regret.regretted_rules} of ${m.decay_regret.archived} |`;
+  const row = (name, m) => `| ${name} | ${m.coverage.corrections} | ${m.coverage.recurring} | ${m.coverage.covered} (${pct(m.coverage.coverage)}) | ${m.coverage.covered_learned} | ${m.coverage.confirmed ?? '-'} (${pct(m.coverage.confirmed_coverage)}) | ${pct(m.first_half.coverage)} | ${pct(m.second_half.coverage)} | ${m.rules} | ${m.decay_regret.regretted_rules} of ${m.decay_regret.archived} |`;
   const inj = result.learn.injection;
   return [
     `Replay: ${result.learn.sessions} sessions, ${result.learn.turns} user turns, ${result.learn.cluster_calls} clustering steps`,
     '',
-    '| run | corrections | mention a known rule | covered | judge-confirmed | first half | second half | rules at end | archived rules a later correction matched |',
-    '|---|---|---|---|---|---|---|---|---|',
+    '| run | corrections | mention a known rule | covered | by a learned rule | judge-confirmed | first half | second half | rules at end | archived rules a later correction matched |',
+    '|---|---|---|---|---|---|---|---|---|---|',
     row('learning', result.learn), row('learning, no per-repo stats', result.no_byrepo), row('no learning', result.no_learn),
     '',
-    `Injection: rules shown on ${inj.turns_with_rules} of ${result.learn.turns} turns (${inj.rule_instances} rule showings); judged relevant ${inj.relevant ?? '-'} of ${inj.judged ?? '-'} sampled (${pct(inj.precision)})`,
+    `Injection: rules shown on ${inj.turns_with_rules} of ${result.learn.turns} turns (${inj.rule_instances} rule showings, ${inj.learned_instances} of learned rules); learned showings judged relevant ${inj.relevant ?? '-'} of ${inj.judged ?? '-'} sampled (${pct(inj.precision)})`,
     `Model spend: $${result.spent_usd.toFixed(3)}`,
   ].join('\n');
 }
