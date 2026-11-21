@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const store = require('../lib/rules/store');
+const handsoff = require('../lib/handsoff');
 
 const fresh = () => { process.env.BUC_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-v10-')); return process.env.BUC_HOME; };
 const withEnv = (vars, fn) => {
@@ -114,4 +115,11 @@ test('patchTurn merges v10 fields into the turn file and creates it when missing
   assert.strictEqual(store.readTurn('s1').toolCalls, 3);
   assert.deepStrictEqual(store.patchTurn('s2', { toolCalls: 1 }), { session_id: 's2', toolCalls: 1 });
   assert.deepStrictEqual(store.readTurn('s2'), { session_id: 's2', toolCalls: 1 });
+});
+
+test('hands-off statements and apply prompts are recognised narrowly', () => {
+  for (const p of ["don't change anything, what is wrong with the header?", 'undo your changes', 'Just show me the css', 'just tell me which file', 'show me how to add a route', 'do not edit anything yet']) assert.ok(handsoff.isStatement(p), p);
+  for (const p of ['make the header blue', "don't change the footer", 'show me the result when done', 'undo the last commit', '']) assert.ok(!handsoff.isStatement(p), p);
+  for (const p of ['apply', 'ok, do it', 'Go ahead', 'yes please apply that']) assert.ok(handsoff.isApply(p), p);
+  for (const p of ['can you apply the theme to the footer', 'what would you do', '']) assert.ok(!handsoff.isApply(p), p);
 });
