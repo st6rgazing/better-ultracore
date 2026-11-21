@@ -405,4 +405,12 @@ function manifest(root) {
   return { version: 1, algorithm: 'sha256', cases };
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, DEFAULT_QUOTAS };
+// Cases whose files no longer match the manifest (changed, missing or extra).
+function checkManifest(root, m) {
+  const now = manifest(root).cases;
+  const bad = [];
+  for (const c of new Set([...Object.keys(m.cases), ...Object.keys(now)])) if (JSON.stringify(m.cases[c] || null) !== JSON.stringify(now[c] || null)) bad.push(c);
+  return bad.sort();
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, DEFAULT_QUOTAS };

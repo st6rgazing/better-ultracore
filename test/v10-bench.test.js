@@ -339,3 +339,20 @@ test('a control has no follow-up and no wrong state', () => {
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('manifest holds only ids and hashes and detects any change', () => {
+  const fx = fixture();
+  try {
+    const root = path.join(fx.dir, 'held');
+    fs.mkdirSync(root);
+    fs.cpSync(caseDir(fx, ['right']), path.join(root, 'ho-01'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'SELECTION.md'), 'private notes');
+    const m = mc.manifest(root);
+    assert.deepStrictEqual(Object.keys(m.cases), ['ho-01']);
+    assert.ok(Object.values(m.cases['ho-01']).every((h) => /^[0-9a-f]{64}$/.test(h)));
+    assert.ok(!JSON.stringify(m).includes('P text') && !JSON.stringify(m).includes(fx.repo));
+    assert.deepStrictEqual(mc.checkManifest(root, m), []);
+    fs.appendFileSync(path.join(root, 'ho-01', 'accept.sh'), '# edited\n');
+    assert.deepStrictEqual(mc.checkManifest(root, m), ['ho-01']);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
