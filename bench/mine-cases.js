@@ -117,4 +117,45 @@ function diffStat(repo, a, b) {
 const isCue = (text) => CUE.test(text);
 const minerVisible = (text) => text.trim().length <= MINER_MAX_LEN && isCue(text);
 
-module.exports = { relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible };
+// Operational turns: a short go-ahead to deploy, push, commit or continue. They are neither requests nor
+// corrections, so pairing looks through them; one between P and C is recorded as an acknowledgement.
+const OPS = /^\s*(yes[, ]+|ok(ay)?[, ]+|done[, ]+)?(push|deploy|straight to|go live|ship|merge|commit|build to|try to deploy|relaunched|reconnected|keep|done|ok(ay)?|yes|yep|perfect|go ahead|continue)\b/i;
+const isOps = (text) => text.trim().split(/\s+/).length <= 8 && OPS.test(text);
+
+// Every pair of consecutive non-operational user turns (P, C) of one session with SHAs resolved; nothing is
+// filtered here. N is the next such turn after C without a correction cue, or the end of the session.
+function triples(file) {
+  const { turns, end } = parseSession(file);
+  const req = turns.filter((t) => !isOps(t.text));
+  const out = [];
+  for (let i = 0; i + 1 < req.length; i++) {
+    const P = req[i];
+    const C = req[i + 1];
+    const repo = repoOf(P.cwd);
+    let j = i + 2;
+    while (j < req.length && isCue(req[j].text)) j++;
+    const nIdx = j < req.length ? req[j].idx : turns.length;
+    const nTs = j < req.length ? req[j].ts : end;
+    // Assistant work between P and N: edit tools, commits and subagent spawns (subagents edit out of sight).
+    const work = turns.slice(P.idx, nIdx).reduce((n, t) => n + t.edits + t.commits + t.spawns, 0);
+    let shas = { base: null, wrong: null, fix: null, done: null };
+    let ref = null;
+    if (repo) {
+      ref = P.branch && git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${P.branch}`) ? P.branch : 'HEAD';
+      shas = resolveShas(repo, ref, P.ts, C.ts, nTs);
+    }
+    const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
+    const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
+    out.push({
+      id: `${P.session.slice(0, 8)}-${String(P.idx).padStart(3, '0')}`,
+      session: P.session, idx: P.idx, turns: turns.length, repo, ref,
+      p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
+      c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, cue: isCue(C.text), visible: minerVisible(C.text) },
+      ack: C.idx > P.idx + 1, n_ts: nTs, work, ...shas,
+      fix_lines: fixStat.lines, fix_files: fixStat.files, done_lines: doneStat.lines, done_files: doneStat.files,
+    });
+  }
+  return out;
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples };
