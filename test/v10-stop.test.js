@@ -174,4 +174,18 @@ test('no-test-weakening blocks a removed test file or an added skip, unless the 
   assert.strictEqual(run('no-test-weakening', t).pass, true, 'a moved test file is not a removal');
 });
 
+test('conflict-or-debugger blocks an added conflict marker or debugger statement', () => {
+  const dir = repo();
+  const t = turn(dir, 'merge the two helpers');
+  write(dir, 'notes.md', 'Title\n=======\nthe word debugger in prose\n');
+  write(dir, 'app.js', 'const debuggerEnabled = false;\n');
+  assert.strictEqual(run('conflict-or-debugger', t).pass, true);
+  write(dir, 'app.js', 'function f() {\n  debugger;\n}\n');
+  assert.match(run('conflict-or-debugger', t).detail, /debugger statement left at app\.js:2/);
+  write(dir, 'app.js', '<<<<<<< HEAD\na\n=======\nb\n>>>>>>> other\n');
+  assert.match(run('conflict-or-debugger', t).detail, /conflict marker left at app\.js:1/);
+  write(dir, 'app.js', 'const label = "old text";\n');
+  assert.strictEqual(run('conflict-or-debugger', t).pass, true);
+});
+
 // end
