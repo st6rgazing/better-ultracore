@@ -48,3 +48,18 @@ test('evict moves dropped rules to the archive and leaves a clean store untouche
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(home, 'rules.archive.json'), 'utf8')).map((r) => r.id), ['goes']);
   assert.deepStrictEqual(votes.evict(), []);
 }));
+
+test('record votes on the shown rules and evicts one corrected twice in a row; cap keeps three', () => withHome(() => {
+  store.importRules([rule('good'), rule('bad')]);
+  assert.deepStrictEqual(votes.record(['good'], false), []);
+  assert.deepStrictEqual(votes.record(['bad'], true), []);
+  assert.deepStrictEqual(store.loadRules().map((r) => r.votes), [3, 1]);
+  assert.deepStrictEqual(votes.record(['bad'], true), ['bad']);
+  assert.deepStrictEqual(store.loadRules().map((r) => r.id), ['good']);
+  assert.deepStrictEqual(votes.record([], true), []);
+  assert.deepStrictEqual(votes.cap([1, 2, 3, 4, 5]), [1, 2, 3]);
+  process.env.BUC_OFF = 'votes';
+  assert.deepStrictEqual(votes.record(['good'], true), []);
+  assert.strictEqual(store.loadRules()[0].votes, 3);
+  assert.deepStrictEqual(votes.cap([1, 2, 3, 4, 5]), [1, 2, 3, 4, 5]);
+}));
