@@ -30,3 +30,14 @@ test('read returns nothing without a file and skips broken lines', () => withHom
   fs.writeFileSync(reflect.file(), '{"k":"still"}\nnot json\n');
   assert.deepStrictEqual(reflect.read(), [{ k: 'still' }]);
 }));
+
+const cand = (k, s, repo = 'r1') => ({ k, s, repo, h: 'aaaaaaaaaaaa', ts: '2026-10-01T00:00:00.000Z' });
+
+test('due needs three candidates of one pattern in one repo from two sessions', () => {
+  assert.deepStrictEqual(reflect.due([cand('still', 'a'), cand('still', 'b')], 'r1'), []);
+  assert.deepStrictEqual(reflect.due([cand('still', 'a'), cand('still', 'a'), cand('still', 'a')], 'r1'), []);
+  assert.deepStrictEqual(reflect.due([cand('still', 'a'), cand('still', 'a'), cand('still', 'b')], 'r1'), ['still']);
+  assert.deepStrictEqual(reflect.due([cand('still', 'a'), cand('still', 'b'), cand('still', 'c', 'r2')], 'r1'), []);
+  assert.deepStrictEqual(reflect.due([cand('still', 'a'), cand('misread', 'b'), cand('overshoot', 'c')], 'r1'), []);
+  assert.deepStrictEqual(reflect.due([cand('nope', 'a'), cand('nope', 'b'), cand('nope', 'c')], 'r1'), []);
+});
