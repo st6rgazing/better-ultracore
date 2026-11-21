@@ -201,3 +201,32 @@ test('a hands-off turn is named HANDSOFF in the turn file', () => {
   inject({ prompt: 'apply', cwd: dir, session_id: 'hn' }, home);
   assert.strictEqual(turn(home, 'hn').intent, '');
 });
+
+test('isUiPrompt reads screen words and tells a page header from an HTTP header', () => {
+  for (const p of ['make the card slightly smaller', 'add a back button to the settings page', 'make the header taller', 'change the help symbol to a !', 'grey out the options for guests']) {
+    assert.ok(intent.isUiPrompt(p), p);
+  }
+  for (const p of ['add an auth header to the request', 'fix the off by one in total()', 'rename fooA to alpha in src/a.js', 'bump the version', '<pasted>Settings page</pasted> fix the parser']) {
+    assert.ok(!intent.isUiPrompt(p), p);
+  }
+});
+
+test('uiServer finds a configured server, a playwright config or a local vite', () => {
+  assert.strictEqual(intent.uiServer(repo()), false);
+  assert.strictEqual(intent.uiServer(null), false);
+  assert.strictEqual(intent.uiServer(repo({ '.claude/buc.json': '{"ui":{"dev":"npm run dev"}}' })), true);
+  assert.strictEqual(intent.uiServer(repo({ '.claude/buc.json': '{"ui":{"url":"http://localhost:5173"}}' })), true);
+  assert.strictEqual(intent.uiServer(repo({ 'playwright.config.ts': 'export default {}\n' })), true);
+  assert.strictEqual(intent.uiServer(repo({ 'node_modules/.bin/vite': '#!/bin/sh\n' })), true);
+  assert.strictEqual(intent.uiServer(repo({ 'playwright.config.ts': 'export default {}\n', '.claude/buc.json': '{"ui":false}' })), false);
+  assert.strictEqual(intent.uiServer(repo({ 'playwright.config.ts': 'export default {}\n', '.claude/buc.json': '{"off":["shot"]}' })), false);
+});
+
+test('shotLine names the helper under the plugin root and is empty without it', () => {
+  const plugin = tmp('buc-plugin-');
+  assert.strictEqual(intent.shotLine(plugin), '');
+  assert.strictEqual(intent.shotLine(''), '');
+  fs.mkdirSync(path.join(plugin, 'bin'));
+  fs.writeFileSync(path.join(plugin, 'bin', 'buc-shot'), '');
+  assert.strictEqual(intent.shotLine(plugin), `After editing, run node "${plugin}/bin/buc-shot" --path <route> (the route you changed, or /), Read the PNG once and say what you saw.`);
+});
