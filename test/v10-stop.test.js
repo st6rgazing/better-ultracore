@@ -268,4 +268,81 @@ test('checkSession runs every built-in check on a turn with a baseline, marks so
   withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => assert.ok(check.checkSession('s', {}).every((r) => r.pass)));
 });
 
+// Writes the turn file the prompt hook would, into `home`.
+const seedTurn = (home, t) => { fs.mkdirSync(home, { recursive: true }); fs.writeFileSync(path.join(home, `turn-${t.session_id}.json`), JSON.stringify(t)); };
+
+test('Stop: a hard check blocks, a soft check returns additionalContext and never a decision', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seedTurn(home, turn(dir, 'make the header blue'));
+  const soft = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Which header?' }, home);
+  assert.deepStrictEqual(Object.keys(soft), ['hookSpecificOutput']);
+  assert.strictEqual(soft.hookSpecificOutput.hookEventName, 'Stop');
+  assert.match(soft.hookSpecificOutput.additionalContext, /^You ended with a question/);
+  assert.ok(fs.existsSync(path.join(home, 'turn-s.json')), 'turn kept for the continuation');
+  write(dir, 'app.js', 'function f() {\n  debugger;\n}\n');
+  const hard = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home);
+  assert.strictEqual(hard.decision, 'block');
+  assert.match(hard.reason, /^Fix before finishing: conflict-or-debugger: debugger statement left at app\.js:2/);
+  assert.strictEqual(hard.hookSpecificOutput, undefined);
+});
+
+test('Stop: stop_hook_active suppresses every check, hard and soft', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seedTurn(home, turn(dir, 'make the header blue', { intent: 'HANDSOFF' }));
+  write(dir, 'app.js', '<<<<<<< HEAD\n');
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir }, home).decision, 'block');
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir, stop_hook_active: true, last_assistant_message: 'ok?' }, home), null);
+  assert.ok(!fs.existsSync(path.join(home, 'turn-s.json')));
+  seedTurn(home, turn(dir, 'make the footer blue'));
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir, stop_hook_active: true, last_assistant_message: 'Which one?' }, home), null);
+});
+
+test('Stop: a soft note rides along with a block, and BUC_OFF switches a check off in the hook', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  seedTurn(home, turn(dir, 'set the title to Home', { intent: 'LITERAL' }));
+  for (let i = 0; i < 6; i++) write(dir, `f${i}.js`, 'x\n');
+  write(dir, 'app.js', '  debugger\n');
+  const out = hook('stop-check.js', { session_id: 's', cwd: dir }, home);
+  assert.strictEqual(out.decision, 'block');
+  assert.match(out.reason, /conflict-or-debugger.*remove it\. Also: 7 files and 8 lines changed/);
+  assert.ok(out.reason.length <= 600);
+  const soft = hook('stop-check.js', { session_id: 's', cwd: dir }, home, { BUC_OFF: 'conflict-or-debugger' });
+  assert.strictEqual(soft.decision, undefined);
+  assert.match(soft.hookSpecificOutput.additionalContext, /^7 files/);
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir }, home, { BUC_OFF: 'conflict-or-debugger,wide-diff' }), null);
+});
+
+test('Stop stores what the turn changed, and the next undo turn is held to it', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => store.saveLastTurn('s', { rules: ['r1'], repo: 'k', ts: 1 }));
+  const first = turn(dir, 'make the label nicer');
+  seedTurn(home, first);
+  write(dir, 'app.js', 'const label = "nicer";\n');
+  write(dir, 'made.js', 'new\n');
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home), null);
+  const last = JSON.parse(fs.readFileSync(path.join(home, 'lastturn-s.json'), 'utf8'));
+  assert.deepStrictEqual(last.rules, ['r1']);
+  assert.strictEqual(last.head, first.head);
+  assert.deepStrictEqual(last.files, { 'app.js': git(dir, 'rev-parse', 'HEAD:app.js'), 'made.js': null });
+  seedTurn(home, turn(dir, 'undo that, just show me', { intent: 'UNDO', prevFiles: last.files }));
+  const out = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Here is how.' }, home);
+  assert.match(out.reason, /undo-restored: .*app\.js, made\.js/);
+  git(dir, 'checkout', '--', 'app.js');
+  fs.unlinkSync(path.join(dir, 'made.js'));
+  seedTurn(home, turn(dir, 'undo that, just show me', { intent: 'UNDO', prevFiles: last.files }));
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Here is how.' }, home), null);
+});
+
+test('Stop does nothing without a session, a turn file or a baseline', () => {
+  const home = tmp('buc-home-');
+  assert.strictEqual(hook('stop-check.js', {}, home), null);
+  assert.strictEqual(hook('stop-check.js', { session_id: 'none', last_assistant_message: 'what?' }, home), null);
+  seedTurn(home, { session_id: 'bare', toolCalls: 3 });
+  assert.strictEqual(hook('stop-check.js', { session_id: 'bare', last_assistant_message: 'what?' }, home), null);
+});
+
 // end
