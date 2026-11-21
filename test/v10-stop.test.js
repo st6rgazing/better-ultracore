@@ -101,3 +101,25 @@ test('undo-restored fails until the previous turn\'s files are back, and only on
   fs.unlinkSync(path.join(dir, 'extra.js'));
   assert.strictEqual(run('undo-restored', t).pass, true);
 });
+
+test('handsoff-no-edits blocks edits on a HANDSOFF turn and in a hands-off repo, never an apply', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => {
+    const t = turn(dir, 'make the header blue', { intent: 'HANDSOFF' });
+    assert.strictEqual(run('handsoff-no-edits', t).pass, true);
+    write(dir, 'app.js', 'changed\n');
+    const r = run('handsoff-no-edits', t);
+    assert.strictEqual(r.pass, false);
+    assert.match(r.detail, /app\.js.*Say 'apply'/);
+    assert.strictEqual(run('handsoff-no-edits', { ...t, intent: 'SELF' }).pass, true);
+    const bare = { ...t, intent: undefined };
+    assert.strictEqual(run('handsoff-no-edits', bare).pass, true, 'no intent and no hands-off setting');
+    require('../lib/handsoff').set(require('../lib/context').repoKey(dir), 'on');
+    assert.strictEqual(run('handsoff-no-edits', bare).pass, false);
+    assert.strictEqual(run('handsoff-no-edits', { ...bare, prompt: 'apply' }).pass, true);
+    assert.strictEqual(run('handsoff-no-edits', { ...bare, intent: 'SELF' }).pass, true, 'a stated intent wins over the fallback');
+  });
+});
+
+// end
