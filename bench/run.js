@@ -180,6 +180,51 @@ function dropRules(file, ids) {
   return gone;
 }
 
+// case.json of a mined case ({repo, base, wrong, fix, session, ts, control}); null for synthetic and older private cases.
+function caseMeta(c) {
+  return has(c, 'case.json') ? JSON.parse(read(c, 'case.json')) : null;
+}
+
+// Adds backfilled provenance ({rule id: [{session, repo, ts, h}]}, what bench/backfill-sources.js prints) to a rules.json.
+// Existing sources are kept; returns the ids that gained any.
+function mergeSources(rulesFile, sourcesFile) {
+  const rules = JSON.parse(fs.readFileSync(rulesFile, 'utf8'));
+  const extra = JSON.parse(fs.readFileSync(sourcesFile, 'utf8'));
+  const touched = [];
+  for (const r of rules) {
+    const add = Array.isArray(extra[r.id]) ? extra[r.id] : [];
+    if (!add.length) continue;
+    const seen = new Set((r.sources || []).map((s) => `${s.session}|${s.h}`));
+    r.sources = [...(r.sources || []), ...add.filter((s) => !seen.has(`${s.session}|${s.h}`))];
+    touched.push(r.id);
+  }
+  fs.writeFileSync(rulesFile, `${JSON.stringify(rules, null, 2)}\n`);
+  return touched;
+}
+
+// --rules-as-of: the rule store a run may see. 'case' cuts at the case's own request time and leaves out what its
+// session taught (case.json ts and session); an ISO date cuts every case at that date. Built with `buc rules as-of`
+// from bucHome into outDir, which then serves as the BUC_HOME source for the buc arms and the CLAUDE.md control.
+// Returns {home, before, excluded_sessions, kept, dropped}, or null when no cut applies (no spec, or 'case' without case.json).
+function asOfHome(c, spec, bucHome, outDir, sourcesFile) {
+  if (!spec) return null;
+  if (!bucHome) throw new Error('--rules-as-of needs --buc-home <dir>');
+  const meta = caseMeta(c);
+  if (spec === 'case' && !(meta && meta.ts)) return null;
+  const before = spec === 'case' ? meta.ts : spec;
+  const sessions = spec === 'case' && meta.session ? [meta.session] : [];
+  const src = `${outDir}-src`;
+  fs.cpSync(bucHome, src, { recursive: true });
+  if (sourcesFile && fs.existsSync(path.join(src, 'rules.json'))) mergeSources(path.join(src, 'rules.json'), sourcesFile);
+  const args = [path.join(ROOT, 'bin', 'buc'), 'rules', 'as-of', '--before', before, '--out', outDir];
+  if (sessions.length) args.push('--exclude-sessions', sessions.join(','));
+  const p = spawnSync('node', args, { encoding: 'utf8', env: { ...process.env, BUC_HOME: src } });
+  fs.rmSync(src, { recursive: true, force: true });
+  if (p.status !== 0) throw new Error(`rules as-of failed for ${c}: ${p.stderr}`);
+  const info = JSON.parse(p.stdout.trim().split('\n').pop());
+  return { home: outDir, before, excluded_sessions: sessions, kept: info.kept, dropped: info.dropped };
+}
+
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
 function writeClaudeMd(dir, bucHome, exclude = []) {
@@ -338,5 +383,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome };
 if (require.main === module) main(process.argv.slice(2));
