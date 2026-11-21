@@ -80,7 +80,7 @@ test('correctionLine fires only after a previous turn', () => {
   assert.strictEqual(correctionLine('still broken', false), '');
   assert.match(correctionLine('still broken', true), /still wrong from the user/);
   assert.match(correctionLine("it doesn't work on mobile", true), /still wrong/);
-  assert.match(correctionLine('no thats not what i meant', true), /Fix only the unmet items/);
+  assert.match(correctionLine('no thats not what i meant', true), /different reading/);
   assert.doesNotMatch(correctionLine('no thats not what i meant', true), /\?$/);
   assert.match(correctionLine('no wait undo ur changes just show me how', true), /text only/);
   assert.strictEqual(correctionLine('add a logout button', true), '');
