@@ -186,7 +186,7 @@ test('buc learn --dry-run skips subagent and temp dirs', () => {
 
 test('inject adds the intent line for a short criteria-free edit prompt', () => {
   const out = hook('inject.js', { prompt: 'make the card slightly smaller', cwd: repo(), session_id: 'i1' }, tmp('buc-home-'));
-  assert.match(out.hookSpecificOutput.additionalContext, /Read the request literally/);
+  assert.match(out.hookSpecificOutput.additionalContext, /decide which this is/);
 });
 
 test('inject adds the probe line for the risky prompt', () => {
