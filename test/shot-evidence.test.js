@@ -37,6 +37,37 @@ test('classesInHtml keeps the classes that appear in a class attribute, in any q
   assert.deepStrictEqual(shot.classesInHtml('<i class="a">', undefined), []);
 });
 
+test('capturePlaywright reports which of the given classes the capture shows, waiting for a late one', { skip: NO_PW }, async () => {
+  await withServer(async (url) => {
+    const mod = require(playwrightDir());
+    const dir = tmp('buc-seen-');
+    const r = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'a.png'), classes: ['card', 'nowhere', 'bad class'] });
+    assert.deepStrictEqual(r, { findings: [], seen: ['card'] });
+    assert.ok(fs.statSync(path.join(dir, 'a.png')).size > 5000);
+    assert.deepStrictEqual((await shot.capturePlaywright(mod, { url, out: path.join(dir, 'b.png'), classes: [] })).seen, []);
+    const t0 = Date.now();
+    assert.deepStrictEqual((await shot.capturePlaywright(mod, { url, out: path.join(dir, 'c.png'), classes: ['nowhere'] })).seen, []);
+    assert.ok(Date.now() - t0 >= 2500, 'an absent class is waited for before giving up');
+  });
+});
+
+test('shot passes seen through with Playwright and leaves it null without classes', { skip: NO_PW }, async () => {
+  const dir = tmp('buc-app-');
+  for (const f of ['server.js', 'index.html']) fs.copyFileSync(path.join(FIXTURE, f), path.join(dir, f));
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'buc.json'), JSON.stringify({ ui: { dev: 'node server.js' } }));
+  const old = { e: process.env.BUC_SHOT_ENGINE, p: process.env.BUC_PLAYWRIGHT };
+  Object.assign(process.env, { BUC_SHOT_ENGINE: 'playwright', BUC_PLAYWRIGHT: playwrightDir() });
+  try {
+    const r = await shot.shot({ root: dir, out: path.join(dir, 's.png'), classes: ['save', 'gone'] });
+    assert.strictEqual(r.status, 'ok', r.reason);
+    assert.deepStrictEqual(r.seen, ['save']);
+    assert.strictEqual((await shot.shot({ root: dir, out: path.join(dir, 't.png') })).seen, null);
+  } finally {
+    for (const [k, v] of [['BUC_SHOT_ENGINE', old.e], ['BUC_PLAYWRIGHT', old.p]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
 test('shownClasses keeps classes on a visible element and drops hidden or absent ones', { skip: NO_PW }, async () => {
   await withServer(async (url) => {
     const mod = require(playwrightDir());
