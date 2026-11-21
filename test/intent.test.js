@@ -7,9 +7,9 @@ const { intentLine } = require('../lib/intent');
 
 const root = path.join(__dirname, '..', 'bench');
 
-test('fires on slight-tweak with a small-step clause', () => {
+test('regex mode: slight-tweak gets a small-step clause', () => {
   const p = fs.readFileSync(path.join(root, 'cases', 'slight-tweak', 'prompt.txt'), 'utf8');
-  const line = intentLine(p, { kind: 'small' });
+  const line = intentLine(p, { kind: 'small', mode: 'regex' });
   assert.match(line, /Read the request literally/);
   assert.match(line, /small step only/);
   assert.ok(line.length <= 240);
@@ -48,9 +48,9 @@ test('silent when criteria present or prompt is long', () => {
   assert.strictEqual(intentLine(''), '');
 });
 
-test('sweep prompts get the sweep line, not the literal one', () => {
+test('regex mode: sweep prompts get the sweep line, not the literal one', () => {
   for (const p of ['remove all traces of ai like this', 'look through the whole app and drop the beta label', 'rename Foo everywhere']) {
-    const line = intentLine(p);
+    const line = intentLine(p, { mode: 'regex' });
     assert.match(line, /every occurrence/, p);
     assert.doesNotMatch(line, /touch only what is named/, p);
   }
