@@ -479,6 +479,8 @@ test('replay CLI runs the three replays with a stand-in model and writes numbers
     assert.match(r.stdout, /\| learning \| 2 \| 1 \| 1 \(50%\) \| 1 \| 1 \(50%\) \| 0% \| 100% \| 1 \|/);
     assert.match(r.stdout, /\| no learning \| 2 \| 0 \| 0 \(0%\)/);
     assert.match(r.stdout, /judged relevant 2 of 2 sampled \(100%\)/);
+    assert.match(r.stdout, /\| by day: learning \| 2 \| 1 \| 1 \(50%\)/);
+    assert.match(r.stdout, /By day \(3 units, 1 clustering steps\)/);
     const saved = fs.readFileSync(path.join(cache, 'replay-metrics.json'), 'utf8');
     assert.strictEqual(JSON.parse(saved).learn.coverage.covered, 1);
     assert.doesNotMatch(saved, /emoji|sidebar/);

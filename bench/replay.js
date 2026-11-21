@@ -212,22 +212,27 @@ const pct = (x) => (x === null || x === undefined ? '-' : `${(100 * x).toFixed(0
 function summary(result) {
   const row = (name, m) => `| ${name} | ${m.coverage.corrections} | ${m.coverage.recurring} | ${m.coverage.covered} (${pct(m.coverage.coverage)}) | ${m.coverage.covered_learned} | ${m.coverage.confirmed ?? '-'} (${pct(m.coverage.confirmed_coverage)}) | ${pct(m.first_half.coverage)} | ${pct(m.second_half.coverage)} | ${m.rules} | ${m.decay_regret.regretted_rules} of ${m.decay_regret.archived} |`;
   const inj = result.learn.injection;
+  const day = result.by_day;
   return [
     `Replay: ${result.learn.sessions} sessions, ${result.learn.turns} user turns, ${result.learn.cluster_calls} clustering steps`,
     '',
     '| run | corrections | mention a known rule | covered | by a learned rule | judge-confirmed | first half | second half | rules at end | archived rules a later correction matched |',
     '|---|---|---|---|---|---|---|---|---|---|',
     row('learning', result.learn), row('learning, no per-repo stats', result.no_byrepo), row('no learning', result.no_learn),
+    ...(day ? [row('by day: learning', day.learn), row('by day: learning, no per-repo stats', day.no_byrepo), row('by day: no learning', day.no_learn)] : []),
     '',
     `Injection: rules shown on ${inj.turns_with_rules} of ${result.learn.turns} turns (${inj.rule_instances} rule showings, ${inj.learned_instances} of learned rules); learned showings judged relevant ${inj.relevant ?? '-'} of ${inj.judged ?? '-'} sampled (${pct(inj.precision)})`,
+    ...(day ? [`By day (${day.learn.sessions} units, ${day.learn.cluster_calls} clustering steps): rules shown on ${day.learn.injection.turns_with_rules} turns (${day.learn.injection.learned_instances} showings of learned rules); judged relevant ${day.learn.injection.relevant ?? '-'} of ${day.learn.injection.judged ?? '-'} sampled (${pct(day.learn.injection.precision)})`] : []),
     `Model spend: $${result.spent_usd.toFixed(3)}`,
   ].join('\n');
 }
 
 // CLI: node bench/replay.js --cache <dir outside the repo> [--projects-root dir] [--every 5] [--cap 3] [--model haiku]
 //      [--sample 120] [--seed 10] [--out file]
-// Three replays: learning, learning without per-repo stats, and no learning. Prints the summary; writes the metrics
-// (numbers only) to --out, by default <cache>/replay-metrics.json. Model answers are cached under --cache.
+// Three replays: learning, learning without per-repo stats, and no learning; then the same three with every
+// multi-day session split into one unit per day, so learning can happen inside a long session. Prints the summary;
+// writes the metrics (numbers only) to --out, by default <cache>/replay-metrics.json. Model answers are cached
+// under --cache.
 function main(argv) {
   const f = { every: '5', cap: '3', model: 'haiku', sample: '120', seed: '10' };
   for (let i = 0; i < argv.length; i++) f[argv[i].replace(/^--/, '')] = argv[++i];
@@ -240,16 +245,20 @@ function main(argv) {
   // Each replay starts from an empty store in a fresh folder; earlier ones are left in place under the cache dir.
   fs.mkdirSync(cacheDir, { recursive: true });
   const homes = fs.mkdtempSync(path.join(cacheDir, 'replay-home-'));
-  const go = (name, o) => replay(sessions, { home: path.join(homes, name), every: parseInt(f.every, 10), log: (m) => console.error(`[${name}] ${m}`), ...o });
-  const learned = go('learn', { cluster: modelCluster(opts) });
-  const flat = go('no-byrepo', { cluster: modelCluster(opts), byRepo: false });
-  const none = go('no-learn', { learn: false });
-  const result = {
-    learn: metrics(learned, { confirmed: confirmCoverage(learned, opts), relevant: samplePrecision(learned, opts, { n: parseInt(f.sample, 10), seed: parseInt(f.seed, 10) }) }),
-    no_byrepo: metrics(flat, { confirmed: confirmCoverage(flat, opts) }),
-    no_learn: metrics(none),
-    spent_usd: spent(cacheDir, 'replay'),
+  const three = (units, tag) => {
+    const go = (name, o) => replay(units, { home: path.join(homes, tag + name), every: parseInt(f.every, 10), log: (m) => console.error(`[${tag}${name}] ${m}`), ...o });
+    const learned = go('learn', { cluster: modelCluster(opts) });
+    const flat = go('no-byrepo', { cluster: modelCluster(opts), byRepo: false });
+    const none = go('no-learn', { learn: false });
+    return {
+      learn: metrics(learned, { confirmed: confirmCoverage(learned, opts), relevant: samplePrecision(learned, opts, { n: parseInt(f.sample, 10), seed: parseInt(f.seed, 10) }) }),
+      no_byrepo: metrics(flat, { confirmed: confirmCoverage(flat, opts) }),
+      no_learn: metrics(none),
+    };
   };
+  const result = three(sessions, '');
+  result.by_day = three(require('./transcripts').byDay(sessions, path.join(homes, 'units')), 'day-');
+  result.spent_usd = spent(cacheDir, 'replay');
   const out = f.out || path.join(cacheDir, 'replay-metrics.json');
   fs.writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
   console.log(summary(result));
