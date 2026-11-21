@@ -43,13 +43,15 @@ function queuedHuman(o) {
 // One transcript -> ordered user text turns, each with the tool calls made before the next user turn.
 // Sidechain, meta, tool-result and harness entries are not turns. Queued messages are turns; one that is
 // also stored as a typed entry within two minutes is kept once, as the typed entry. `n` names a turn in ids:
-// typed turns count 000, 001, ... as before, queued ones q000, q001, ...
+// typed turns count 000, 001, ... as before, queued ones q000, q001, ..., and typed ones found behind a leading
+// reminder r000, r001, ..., so ids given before these two kinds were read stay valid.
 function parseSession(file) {
   const turns = [];
   let cur = null;
   let end = null;
   let typed = 0;
   let queued = 0;
+  let behind = 0;
   const twin = (text, ts, isQueued) => turns.find((t) => !!t.queued === isQueued && t.text === text && Math.abs(new Date(ts) - new Date(t.ts)) <= 120000);
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     let o;
@@ -80,6 +82,7 @@ function parseSession(file) {
     const blocks = typeof c === 'string' ? [{ type: 'text', text: c }] : Array.isArray(c) ? c : [];
     if (blocks.some((b) => b && b.type === 'tool_result')) continue;
     let text = blocks.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim();
+    const led = LEADING_REMINDER.test(text);
     text = text.replace(LEADING_REMINDER, '').trim();
     if (!text) continue;
     const attached = /<wake\b[\s\S]*has-attachments?=|^\s*@"[^"]*\.(png|jpe?g|gif|webp)"/i.test(text);
@@ -90,7 +93,7 @@ function parseSession(file) {
     } else if (HARNESS.test(text)) continue;
     const dup = twin(text, o.timestamp, true);
     if (dup) turns.splice(turns.indexOf(dup), 1);
-    cur = { session: o.sessionId || path.basename(file, '.jsonl'), n: String(typed++).padStart(3, '0'), ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: dup ? dup.tools : 0, edits: dup ? dup.edits : 0, commits: dup ? dup.commits : 0, spawns: dup ? dup.spawns : 0 };
+    cur = { session: o.sessionId || path.basename(file, '.jsonl'), n: led ? `r${String(behind++).padStart(3, '0')}` : String(typed++).padStart(3, '0'), ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: dup ? dup.tools : 0, edits: dup ? dup.edits : 0, commits: dup ? dup.commits : 0, spawns: dup ? dup.spawns : 0 };
     turns.push(cur);
   }
   turns.forEach((t, i) => { t.idx = i; });

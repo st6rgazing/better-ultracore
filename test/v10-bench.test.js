@@ -183,7 +183,7 @@ test('parseSession: a leading harness reminder is dropped, the typed text kept; 
       user(3, rem, '/r'),
       user(4, 'something with a <system-reminder>x</system-reminder> inside', '/r'),
     ].map((l) => JSON.stringify(l)).join('\n'));
-    assert.deepStrictEqual(mc.parseSession(file).turns.map((t) => t.text), ['the cards are still off centre']);
+    assert.deepStrictEqual(mc.parseSession(file).turns.map((t) => [t.n, t.text]), [['r000', 'the cards are still off centre']]);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
