@@ -232,6 +232,38 @@ function armOff(arm, current = '') {
   return [...new Set([...String(current).split(','), ...(ARMS[arm].off || [])].map((x) => x.trim()).filter(Boolean))].join(',');
 }
 
+// Directory of a Playwright package installed in root or one of its direct subfolders (client/, web/), or null.
+function playwrightIn(root) {
+  if (!root || !fs.existsSync(root)) return null;
+  const subs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => path.join(root, e.name));
+  for (const dir of [root, ...subs]) {
+    for (const name of ['playwright', '@playwright/test', 'playwright-core']) {
+      const pkg = path.join(dir, 'node_modules', name, 'package.json');
+      if (fs.existsSync(pkg)) return path.dirname(pkg);
+    }
+  }
+  return null;
+}
+
+// Env that lets the plugin's screenshot and layout checks find a browser inside a run clone. A Playwright at the
+// clone's root wins (lib/shot.js resolves it from there). Otherwise BUC_PLAYWRIGHT names one from a subfolder of
+// the clone, the case's source repo or this repo's fixture. PLAYWRIGHT_BROWSERS_PATH names the user's browser
+// cache when it exists, so the clone launches the Chromium the source repo already downloaded.
+// Values the caller set are kept. Returns only the entries to add; empty when no browser is available.
+function browserEnv(dir, meta, env = process.env, home = os.homedir()) {
+  const out = {};
+  const atRoot = ['playwright', '@playwright/test', 'playwright-core'].some((n) => fs.existsSync(path.join(dir, 'node_modules', n, 'package.json')));
+  if (!env.BUC_PLAYWRIGHT && !atRoot) {
+    const found = [dir, meta && meta.repo, path.join(ROOT, 'fixtures', 'vite-express'), ROOT].map(playwrightIn).find(Boolean);
+    if (found) out.BUC_PLAYWRIGHT = found;
+  }
+  if (!env.PLAYWRIGHT_BROWSERS_PATH) {
+    const cache = [path.join(home, 'Library', 'Caches', 'ms-playwright'), path.join(home, '.cache', 'ms-playwright')].find((p) => fs.existsSync(p));
+    if (cache) out.PLAYWRIGHT_BROWSERS_PATH = cache;
+  }
+  return out;
+}
+
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
 function writeClaudeMd(dir, bucHome, exclude = []) {
@@ -259,7 +291,8 @@ function liveRun(c, arm, rep, o) {
     const home = asOf ? asOf.home : o.bucHome;
     if (ARMS[arm].claudeMd) writeClaudeMd(dir, home, exclude);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
-    const env = { ...process.env };
+    const browser = browserEnv(dir, meta);
+    const env = { ...process.env, ...browser };
     if (ARMS[arm].bucHome) {
       env.BUC_HOME = path.join(parent, 'buc-home');
       if (home) fs.cpSync(home, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
@@ -327,6 +360,7 @@ function liveRun(c, arm, rep, o) {
       excluded_rules: exclude,
       rules_as_of: asOf ? { before: asOf.before, excluded_sessions: asOf.excluded_sessions, kept: asOf.kept, dropped: asOf.dropped } : null,
       control: meta ? !!meta.control : null,
+      browser: { playwright: browser.BUC_PLAYWRIGHT ? 'borrowed' : playwrightIn(dir) ? 'own' : null },
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
@@ -401,5 +435,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome, armOff };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome, armOff, playwrightIn, browserEnv };
 if (require.main === module) main(process.argv.slice(2));

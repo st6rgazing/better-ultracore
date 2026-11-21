@@ -168,4 +168,27 @@ test('buc-regex arm runs the plugin with self-classification off', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('browserEnv lends a clone a Playwright and the browser cache', () => {
+  const { browserEnv, playwrightIn } = require('../bench/run');
+  const root = tmp('browser');
+  try {
+    const clone = path.join(root, 'clone');
+    const source = path.join(root, 'source');
+    const home = path.join(root, 'userhome');
+    fs.mkdirSync(clone);
+    write(path.join(source, 'web', 'node_modules', '@playwright', 'test', 'package.json'), '{}');
+    fs.mkdirSync(path.join(home, 'Library', 'Caches', 'ms-playwright'), { recursive: true });
+    assert.strictEqual(playwrightIn(clone), null);
+    const lent = browserEnv(clone, { repo: source }, {}, home);
+    assert.strictEqual(lent.BUC_PLAYWRIGHT, path.join(source, 'web', 'node_modules', '@playwright', 'test'));
+    assert.strictEqual(lent.PLAYWRIGHT_BROWSERS_PATH, path.join(home, 'Library', 'Caches', 'ms-playwright'));
+    // the caller's own settings win
+    assert.deepStrictEqual(browserEnv(clone, { repo: source }, { BUC_PLAYWRIGHT: '/x', PLAYWRIGHT_BROWSERS_PATH: '/y' }, home), {});
+    // a Playwright at the clone root is found by the plugin itself
+    write(path.join(clone, 'node_modules', 'playwright', 'package.json'), '{}');
+    assert.strictEqual(browserEnv(clone, { repo: source }, {}, path.join(root, 'nohome')).BUC_PLAYWRIGHT, undefined);
+    assert.deepStrictEqual(browserEnv(clone, null, {}, path.join(root, 'nohome')), {});
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
