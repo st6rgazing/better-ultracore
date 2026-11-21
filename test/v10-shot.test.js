@@ -72,4 +72,30 @@ test('findEngine: none when forced off, a named Chrome binary, a Playwright modu
   await withEnv({ BUC_SHOT_ENGINE: 'playwright', BUC_PLAYWRIGHT: path.join(dir, 'notpw') }, () => assert.strictEqual(shot.findEngine(dir), null));
 });
 
+test('startServer and stopServer: the fixture server answers, then nothing is left listening', async () => {
+  const port = await shot.freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  assert.strictEqual(await shot.ping(url), false);
+  // Through a shell with a second command, as npm scripts do: the group kill must reach the node child.
+  const child = shot.startServer('true && node server.js', FIXTURE, { PORT: String(port) });
+  try {
+    assert.strictEqual(await shot.waitFor(url, 10000), true);
+  } finally {
+    await shot.stopServer(child);
+  }
+  assert.strictEqual(await shot.ping(url), false);
+  assert.strictEqual(await shot.waitFor(url, 300), false);
+  await shot.stopServer(null);
+});
+
+test('stopAll kills a server that was never stopped', async () => {
+  const port = await shot.freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  shot.startServer('node server.js', FIXTURE, { PORT: String(port) });
+  assert.strictEqual(await shot.waitFor(url, 10000), true);
+  shot.stopAll();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.strictEqual(await shot.ping(url), false);
+});
+
 // end
