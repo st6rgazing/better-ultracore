@@ -356,3 +356,20 @@ test('repoOf uses the git repo key for a subdirectory of a live repo', () => {
   assert.strictEqual(mine.repoOf(path.join(root, 'src')), path.basename(fs.realpathSync(root)));
   assert.strictEqual(mine.repoOf(''), '');
 });
+
+test('session end queues corrections with their own time, repo and hash, and bumps with a source', () => {
+  fresh();
+  store.importRules([{ ...RULE, sources: [src('A', 0)] }]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-end-'));
+  const f = transcript(dir, 't.jsonl', [
+    userTurn('S9', 'add a header', '2026-06-20T10:00:00.000Z', '/gone/away/myrepo'),
+    userTurn('S9', 'no, only the header', '2026-06-20T10:05:00.000Z', '/gone/away/myrepo'),
+  ]);
+  withEnv({ BUC_NOW: '2026-06-21T00:00:00.000Z' }, () => assert.strictEqual(require('../hooks/session-end').run({ transcript_path: f }), 1));
+  const h = store.hash('no, only the header');
+  assert.deepStrictEqual(store.readInbox(), [{ ts: '2026-06-20T10:05:00.000Z', session_id: 'S9', text: 'no, only the header', repo: 'myrepo', h }]);
+  const [r] = store.loadRules();
+  assert.deepStrictEqual([r.count, r.last_seen], [2, '2026-06-21T00:00:00.000Z']);
+  assert.deepStrictEqual(r.sources[1], { session: 'S9', repo: 'myrepo', ts: '2026-06-20T10:05:00.000Z', h, origin: 'bump' });
+  assert.deepStrictEqual(store.asOf([r], { excludeSessions: ['S9'] })[0].count, 1);
+});
