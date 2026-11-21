@@ -38,3 +38,13 @@ test('split drops unpinned rules at zero votes and the lowest-scored beyond 30',
   assert.strictEqual(b.keep.length, 30);
   assert.deepStrictEqual(b.out.map((r) => r.id), ['r01', 'r02', 'r03'], 'the lowest counts go, the pinned one stays');
 }));
+
+test('evict moves dropped rules to the archive and leaves a clean store untouched', () => withHome((home) => {
+  assert.deepStrictEqual(votes.evict(), []);
+  store.importRules([rule('stays'), rule('goes')]);
+  store.updateRules(['goes'], (r) => { r.votes = 0; });
+  assert.deepStrictEqual(votes.evict(), ['goes']);
+  assert.deepStrictEqual(store.loadRules().map((r) => r.id), ['stays']);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(home, 'rules.archive.json'), 'utf8')).map((r) => r.id), ['goes']);
+  assert.deepStrictEqual(votes.evict(), []);
+}));
