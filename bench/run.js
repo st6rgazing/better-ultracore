@@ -135,6 +135,22 @@ function patchOf(dir, preUntracked = [], base) {
   return { root, stat, patch };
 }
 
+// Audit entry for one agent call: what the user said, what came back, and the repo state right after it.
+// pass is null when accept was not run after this call; the patch is cumulative since setup.
+function roundEntry(round, prompt, run, pass, diff) {
+  const reply = typeof run.result === 'string' ? run.result : null;
+  return {
+    round, prompt: String(prompt || '').slice(0, 400),
+    reply_excerpt: reply === null ? null : reply.slice(0, 600),
+    reply_tail: reply !== null && reply.length > 600 ? reply.slice(-300) : null,
+    accept_pass: pass,
+    files_changed: diff.stat.map((x) => x.file),
+    lines_changed: diff.stat.reduce((n, x) => n + x.added + x.deleted, 0),
+    patch: diff.patch,
+    exit: run.exit ?? null, timed_out: !!run.timed_out, total_cost_usd: run.total_cost_usd ?? null,
+  };
+}
+
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
 function writeClaudeMd(dir, bucHome) {
@@ -273,5 +289,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf };
 if (require.main === module) main(process.argv.slice(2));
