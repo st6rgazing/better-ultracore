@@ -309,4 +309,32 @@ test('stats report CLI reads held-out and regression files', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('ask caches answers, charges the ledger and stops at the cap', () => {
+  const { ask, jsonIn, spent, outside } = require('../bench/ask');
+  const dir = tmp('ask');
+  try {
+    const log = path.join(dir, 'calls.log');
+    const bin = path.join(dir, 'fake-claude');
+    write(bin, `#!/bin/sh\ncat > /dev/null\necho "$@" >> "${log}"\necho '{"result":"[1, 2]","total_cost_usd":0.6}'\n`, 0o755);
+    const cacheDir = path.join(dir, 'cache');
+    const opts = { cacheDir, label: 't', cap: 1, bin };
+    const first = ask('one', opts);
+    assert.deepStrictEqual([first.text, first.cached, first.cost], ['[1, 2]', false, 0.6]);
+    assert.deepStrictEqual(jsonIn(first.text), [1, 2]);
+    const again = ask('one', opts);
+    assert.deepStrictEqual([again.cached, again.cost], [true, 0]);
+    ask('two', opts);
+    assert.ok(Math.abs(spent(cacheDir, 't') - 1.2) < 1e-9);
+    assert.throws(() => ask('three', opts), { code: 'BUDGET' });
+    assert.strictEqual(ask('two', opts).cached, true);
+    const calls = fs.readFileSync(log, 'utf8').trim().split('\n');
+    assert.strictEqual(calls.length, 2);
+    assert.match(calls[0], /--model haiku .*--max-budget-usd 1\.00 --tools {2}--strict-mcp-config/);
+    assert.match(calls[1], /--max-budget-usd 0\.40/);
+    assert.throws(() => outside(path.join(ROOT, 'bench', 'cache')), /outside the repo/);
+    assert.deepStrictEqual(jsonIn('Here you go:\n```json\n{"a": [1]}\n```'), { a: [1] });
+    assert.strictEqual(jsonIn('no json'), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // more tests below
