@@ -80,4 +80,17 @@ function transcripts(root, skip = []) {
   return out;
 }
 
-module.exports = { relayed, parseSession, transcripts };
+const git = (repo, ...args) => {
+  const p = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 1 << 26 });
+  return p.status === 0 ? p.stdout.trim() : '';
+};
+
+const repoCache = new Map();
+// The repo a turn ran in: git top level of its cwd, or null when the dir is gone or not a repo.
+function repoOf(cwd) {
+  if (!cwd) return null;
+  if (!repoCache.has(cwd)) repoCache.set(cwd, fs.existsSync(cwd) ? git(cwd, 'rev-parse', '--show-toplevel') || null : null);
+  return repoCache.get(cwd);
+}
+
+module.exports = { relayed, parseSession, transcripts, repoOf };
