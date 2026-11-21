@@ -209,3 +209,21 @@ test('typecheck blocks with output after a change, skips when idle, missing deps
   write(dir, 'package.json', '{}');
   assert.strictEqual(run('typecheck', t).detail, 'skipped: no node_modules');
 });
+
+test('commit-changes blocks work left uncommitted this turn, not files that were dirty before', () => {
+  const dir = repo();
+  write(dir, 'notes.txt', 'mine\n');
+  const t = turn(dir, 'add a footer');
+  assert.strictEqual(run('commit-changes', t).pass, true);
+  write(dir, 'app.js', 'changed\n');
+  write(dir, 'footer.js', 'new\n');
+  const r = run('commit-changes', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /app\.js, footer\.js/);
+  assert.doesNotMatch(r.detail, /notes\.txt/);
+  assert.strictEqual(run('commit-changes', { ...t, prompt: 'add a footer but dont commit yet' }).pass, true);
+  assert.strictEqual(run('commit-changes', { ...t, kind: 'advice' }).pass, true);
+  git(dir, 'add', 'app.js', 'footer.js');
+  git(dir, 'commit', '-qm', 'add footer');
+  assert.strictEqual(run('commit-changes', t).pass, true);
+});
