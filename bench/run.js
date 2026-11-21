@@ -230,6 +230,8 @@ function asOfHome(c, spec, bucHome, outDir, sourcesFile) {
 function writeClaudeMd(dir, bucHome, exclude = []) {
   const src = bucHome && fs.existsSync(path.join(bucHome, 'rules.json')) ? path.join(bucHome, 'rules.json') : RULES;
   const rules = JSON.parse(fs.readFileSync(src, 'utf8')).filter((r) => !exclude.includes(r.id));
+  // An as-of cut can leave nothing; an empty heading would only be noise.
+  if (!rules.length) return;
   const file = path.join(dir, 'CLAUDE.md');
   const tracked = spawnSync('git', ['-C', dir, 'ls-files', '--error-unmatch', 'CLAUDE.md']).status === 0;
   fs.appendFileSync(file, `\n# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
@@ -244,12 +246,16 @@ function liveRun(c, arm, rep, o) {
     const s = sh(path.join(caseDir(c), 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
     const exclude = excludedIds(o.excludeFrom, c);
-    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome, exclude);
+    const meta = caseMeta(c);
+    // With --rules-as-of the buc arms and the CLAUDE.md control both read the cut store, never the full one.
+    const asOf = asOfHome(c, o.rulesAsOf, o.bucHome, path.join(parent, 'asof-home'), o.ruleSources);
+    const home = asOf ? asOf.home : o.bucHome;
+    if (ARMS[arm].claudeMd) writeClaudeMd(dir, home, exclude);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
     const env = { ...process.env };
     if (ARMS[arm].bucHome) {
       env.BUC_HOME = path.join(parent, 'buc-home');
-      if (o.bucHome) fs.cpSync(o.bucHome, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
+      if (home) fs.cpSync(home, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
       dropRules(path.join(env.BUC_HOME, 'rules.json'), exclude);
     }
     const prompt = read(c, 'prompt.txt');
@@ -311,6 +317,8 @@ function liveRun(c, arm, rep, o) {
       result_excerpt: typeof last.result === "string" ? last.result.slice(0, 600) : null,
       rounds,
       excluded_rules: exclude,
+      rules_as_of: asOf ? { before: asOf.before, excluded_sessions: asOf.excluded_sessions, kept: asOf.kept, dropped: asOf.dropped } : null,
+      control: meta ? !!meta.control : null,
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
@@ -370,7 +378,9 @@ function main(argv) {
   }
   const arms = f.arms.split(',');
   for (const a of arms) if (!ARMS[a]) throw new Error(`unknown arm: ${a}`);
-  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']), excludeFrom: f['exclude-rules-from'] || '' };
+  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']), excludeFrom: f['exclude-rules-from'] || '',
+    rulesAsOf: f['rules-as-of'] || '', ruleSources: f['rule-sources'] && path.resolve(f['rule-sources']) };
+  if (o.rulesAsOf && !o.bucHome) throw new Error('--rules-as-of needs --buc-home <dir>');
   const rows = [];
   for (const c of cases) for (const arm of arms) for (let rep = 1; rep <= parseInt(f.n, 10); rep++) {
     console.error(`run ${c} ${arm} #${rep}`);

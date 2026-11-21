@@ -116,4 +116,36 @@ test('asOfHome cuts at the case date and leaves out the case session', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+// A stand-in for claude: logs what the run could see, then prints a result. `body` runs in the run's repo.
+function fakeClaude(dir, body = '') {
+  const bin = path.join(dir, 'fake-claude');
+  write(bin, `#!/bin/sh\n${body}\necho '{"session_id":"s","result":"done","num_turns":2,"total_cost_usd":0.02,"usage":{"input_tokens":5,"output_tokens":2}}'\n`, 0o755);
+  return bin;
+}
+
+test('fake claude: --rules-as-of case gives the buc and CLAUDE.md arms the cut store only', () => {
+  const root = tmp('asof-live');
+  try {
+    heldoutCase(root, 'ho-a', { json: { control: true } });
+    const home = seededHome(path.join(root, 'home'));
+    const log = path.join(root, 'seen.log');
+    const bin = fakeClaude(root, `cat CLAUDE.md "$BUC_HOME/rules.json" >> "${log}" 2>/dev/null`);
+    const out = path.join(root, 'out.json');
+    const r = bench(['--arms', 'plain-claudemd,buc', '--cases', 'ho-a', '--buc-home', home, '--rules-as-of', 'case', '--out', out], root, { BUC_CLAUDE_BIN: bin });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const seen = fs.readFileSync(log, 'utf8');
+    assert.match(seen, /Rule early\./);
+    assert.doesNotMatch(seen, /Rule (own|late|bare)\./);
+    const rows = JSON.parse(fs.readFileSync(out, 'utf8'));
+    for (const row of rows) {
+      assert.deepStrictEqual(row.rules_as_of.kept, ['early']);
+      assert.deepStrictEqual(row.rules_as_of.excluded_sessions, ['s-own']);
+      assert.strictEqual(row.control, true);
+    }
+    const bad = bench(['--arms', 'buc', '--cases', 'ho-a', '--rules-as-of', 'case', '--out', out], root, { BUC_CLAUDE_BIN: bin });
+    assert.notStrictEqual(bad.status, 0);
+    assert.match(bad.stderr, /needs --buc-home/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
