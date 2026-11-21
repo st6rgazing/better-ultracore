@@ -147,3 +147,14 @@ test('a hands-off repo gets the steps line on edit prompts and nothing that asks
   assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: dir, session_id: 'ho3' }, home, { BUC_OFF: 'handsoff' }), /Do not edit/);
   assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'ho4' }, home), /Do not edit/);
 });
+
+test('readCorrection names the undo and misread readings', () => {
+  const name = (p) => intent.readCorrection(p, true).name;
+  assert.strictEqual(name('no wait undo ur changes just show me how'), 'UNDO');
+  assert.strictEqual(name('no thats not what i meant'), 'MISREAD');
+  assert.strictEqual(name('still broken'), '');
+  assert.strictEqual(intent.readCorrection('still broken', true).pattern, 'still');
+  assert.strictEqual(intent.readCorrection('way too big', true).pattern, 'overshoot');
+  assert.deepStrictEqual(intent.readCorrection('add a logout button', true), { name: '', line: '', pattern: '' });
+  assert.deepStrictEqual(intent.readCorrection('no thats not what i meant', false), { name: '', line: '', pattern: '' });
+});
