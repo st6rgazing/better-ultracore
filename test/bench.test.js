@@ -59,3 +59,31 @@ test('sim-user: pass needs no intervention; a question gets the best-reading rep
   assert.strictEqual(r.first_try_pass, false);
   assert.strictEqual(r.final_pass, true);
 });
+
+test('roundEntry keeps the prompt, both ends of a long reply, the accept result and the patch', () => {
+  const { roundEntry } = require('../bench/run');
+  const diff = { stat: [{ file: 'a.js', added: 2, deleted: 1 }], patch: 'diff --git a/a.js b/a.js' };
+  const e = roundEntry(1, 'fix it', { result: `${'x'.repeat(700)}Which one?`, exit: 0, total_cost_usd: 0.1 }, false, diff);
+  assert.strictEqual(e.reply_excerpt.length, 600);
+  assert.match(e.reply_tail, /Which one\?$/);
+  assert.deepStrictEqual([e.round, e.prompt, e.accept_pass, e.files_changed, e.lines_changed, e.patch], [1, 'fix it', false, ['a.js'], 3, diff.patch]);
+  const none = roundEntry(0, 'p', { result: null }, null, { stat: [], patch: '' });
+  assert.deepStrictEqual([none.reply_excerpt, none.reply_tail, none.accept_pass], [null, null, null]);
+});
+
+test('patchOf includes new files and leaves them untracked', () => {
+  const { patchOf } = require('../bench/run');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchtest-patch-'));
+  try {
+    const git = (...a) => spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).stdout;
+    git('init', '-q');
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'a\n');
+    git('add', '.');
+    git('-c', 'user.email=t@example.com', '-c', 'user.name=t', 'commit', '-qm', 'init');
+    fs.writeFileSync(path.join(dir, 'new.txt'), 'n\n');
+    const d = patchOf(dir);
+    assert.deepStrictEqual(d.stat.map((x) => x.file), ['new.txt']);
+    assert.match(d.patch, /\+n/);
+    assert.strictEqual(git('status', '--porcelain').trim(), '?? new.txt');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
