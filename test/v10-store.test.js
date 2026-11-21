@@ -8,6 +8,7 @@ const path = require('node:path');
 const store = require('../lib/rules/store');
 const handsoff = require('../lib/handsoff');
 const mine = require('../lib/rules/mine');
+const habits = require('../lib/rules/habits');
 const { retrieve, matches } = require('../lib/rules/retrieve');
 
 const fresh = () => { process.env.BUC_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-v10-')); return process.env.BUC_HOME; };
@@ -403,4 +404,43 @@ test('updateRules edits the listed stored rules in place', () => {
   store.importRules([RULE, { ...RULE, id: 'other-rule' }]);
   store.updateRules(['only-named'], (r) => { r.scope = { repos: ['r1'] }; });
   assert.deepStrictEqual(store.loadRules().map((r) => r.scope), [{ repos: ['r1'] }, undefined]);
+});
+
+const HABIT = 'always commit after each change';
+const habitIn = (repo) => retrieve({ prompt: 'add a chat panel', rules: store.loadRules(), repo }).matched.map((r) => r.id);
+
+test('a commit habit stated in repo A is enforced in A and absent in B; restated in B it is global', () => {
+  fresh();
+  assert.deepStrictEqual(habits.capture(HABIT, 'A'), ['commit-as-you-go']);
+  assert.deepStrictEqual([store.loadRules()[0].scope, store.loadRules()[0].origin], [{ repos: ['A'] }, 'habit']);
+  assert.deepStrictEqual([habitIn('A'), habitIn('B'), habitIn(undefined)], [['commit-as-you-go'], [], []]);
+  habits.capture(HABIT, 'A');
+  assert.deepStrictEqual([store.loadRules()[0].scope, store.loadRules()[0].count], [{ repos: ['A'] }, 2]);
+  habits.capture(HABIT, 'B');
+  assert.strictEqual(store.loadRules()[0].scope, undefined);
+  assert.deepStrictEqual([habitIn('A'), habitIn('B'), habitIn('C')], [['commit-as-you-go'], ['commit-as-you-go'], ['commit-as-you-go']]);
+  habits.capture(HABIT, 'C');
+  assert.strictEqual(store.loadRules()[0].scope, undefined);
+});
+
+test('a global cue makes the habit global at once, and widens a scoped one', () => {
+  fresh();
+  habits.capture('always commit after each change in all my projects', 'A');
+  assert.strictEqual(store.loadRules()[0].scope, undefined);
+  assert.deepStrictEqual(habitIn('B'), ['commit-as-you-go']);
+  fresh();
+  habits.capture(HABIT, 'A');
+  habits.capture('from now on commit every time, everywhere', 'A');
+  assert.strictEqual(store.loadRules()[0].scope, undefined);
+});
+
+test('outside a git repo a habit is stored only with a global cue; one argument stays global', () => {
+  fresh();
+  assert.deepStrictEqual(habits.capture(HABIT, null), []);
+  assert.deepStrictEqual(store.loadRules(), []);
+  assert.deepStrictEqual(habits.capture('always commit after each change across all repos', null), ['commit-as-you-go']);
+  assert.strictEqual(store.loadRules()[0].scope, undefined);
+  fresh();
+  habits.capture(HABIT);
+  assert.strictEqual(store.loadRules()[0].scope, undefined);
 });
