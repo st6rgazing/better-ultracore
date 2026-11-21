@@ -218,4 +218,48 @@ test('armSummary counts passes and averages per run', () => {
   assert.strictEqual(stats.armSummary(rows, 'ultra').interventions, null);
 });
 
+// 6 held-out cases, 3 runs each: buc first try everywhere, plain needs a correction on four of them.
+const WIN = [
+  ...['c1', 'c2', 'c3', 'c4'].flatMap((c) => [...runs(c, 'buc', 3), ...runs(c, 'plain', 3, { first: 1, interventions: 1 })]),
+  ...['k1', 'k2'].flatMap((c) => [...runs(c, 'buc', 3, { control: true }), ...runs(c, 'plain', 3, { control: true })]),
+];
+const OLD_OK = ['o1', 'o2', 'o3', 'o4', 'o5', 'o6', 'o7', 'o8'].flatMap((c) => runs(c, 'buc', 3, { first: 2 }));
+const passes = (list) => list.map((x) => x.pass);
+
+test('behindCases flags 2 of 3 and 3 of 5', () => {
+  const rows = [...runs('x', 'buc', 3, { first: 1 }), ...runs('x', 'plain', 3), ...runs('y', 'buc', 3, { first: 2 }), ...runs('y', 'plain', 3),
+    ...runs('z', 'buc', 5, { first: 3 }), ...runs('z', 'plain', 5), ...runs('w', 'buc', 5, { first: 2 }), ...runs('w', 'plain', 5)];
+  assert.deepStrictEqual(stats.behindCases(rows, 'buc', 'plain').map((x) => x.case), ['x', 'w']);
+});
+
+test('criteria: all six pass on a clear win', () => {
+  const got = stats.criteria(WIN, { regression: OLD_OK, B: 2000 });
+  assert.deepStrictEqual(got.map((x) => x.id), [1, 2, 3, 4, 5, 6]);
+  assert.deepStrictEqual(passes(got), [true, true, true, true, true, true]);
+  assert.match(got[5].detail, /16\/24 first try \(need 12\), 24\/24 final \(need 22\)/);
+});
+
+test('criteria: each one fails on its own evidence', () => {
+  // 1: the same interventions in both arms
+  const flat = ['c1', 'c2', 'c3'].flatMap((c) => [...runs(c, 'buc', 3, { first: 1 }), ...runs(c, 'plain', 3, { first: 1 })]);
+  assert.deepStrictEqual(passes(stats.criteria(flat, { B: 500 })).slice(0, 4), [false, true, true, true]);
+  // 2 and 4: buc loses a case outright
+  const lost = [...WIN.filter((r) => r.control), ...runs('c1', 'buc', 3, { first: 0 }), ...runs('c1', 'plain', 3), ...runs('c5', 'buc', 3, { first: 0 }), ...runs('c5', 'plain', 3)];
+  const l = stats.criteria(lost, { B: 500 });
+  assert.strictEqual(l[1].pass, false);
+  assert.strictEqual(l[3].pass, false);
+  assert.match(l[3].detail, /c1 0 vs 3 of 3/);
+  // 3: buc burns more tokens
+  const heavy = WIN.map((r) => (r.arm === 'buc' ? { ...r, tokens_to_accept: 1100 } : r));
+  assert.strictEqual(stats.criteria(heavy, { B: 500 })[2].pass, false);
+  // 5: a control regresses
+  const ctl = [...WIN.filter((r) => r.case !== 'k1'), ...runs('k1', 'buc', 3, { first: 2, control: true }), ...runs('k1', 'plain', 3, { control: true })];
+  assert.strictEqual(stats.criteria(ctl, { B: 500 })[4].pass, false);
+  // 6: too few old cases pass; no regression runs is not a pass either
+  assert.strictEqual(stats.criteria(WIN, { regression: OLD_OK.map((r) => ({ ...r, first_try_pass: false })), B: 500 })[5].pass, false);
+  assert.strictEqual(stats.criteria(WIN, { B: 500 })[5].pass, null);
+  // unpaired cases are ignored
+  assert.strictEqual(stats.criteria(runs('solo', 'buc', 3), { B: 500 })[0].pass, null);
+});
+
 // more tests below
