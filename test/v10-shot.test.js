@@ -98,4 +98,53 @@ test('stopAll kills a server that was never stopped', async () => {
   assert.strictEqual(await shot.ping(url), false);
 });
 
+// A stand-in for Chrome: writes a small file where --screenshot points, so capture tests need no browser.
+function fakeChrome(dir) {
+  const bin = path.join(dir, 'fake-chrome');
+  fs.writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "${a#--screenshot=}";; esac; done\n', { mode: 0o755 });
+  return bin;
+}
+
+// A Playwright module to test with: BUC_PLAYWRIGHT, else one installed in the repo's vite-express fixture. '' when there is none.
+function playwrightDir() {
+  const dirs = [process.env.BUC_PLAYWRIGHT, path.join(ROOT, 'fixtures', 'vite-express', 'node_modules', 'playwright')].filter(Boolean);
+  return dirs.find((d) => fs.existsSync(path.join(d, 'package.json'))) || '';
+}
+const REAL_CHROME = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium'].find((p) => fs.existsSync(p));
+
+test('captureChrome runs the binary with a screenshot path and reports whether a file appeared', async () => {
+  const dir = tmp('buc-shot-');
+  const out = path.join(dir, 'a.png');
+  assert.strictEqual(await shot.captureChrome(fakeChrome(dir), { url: 'http://127.0.0.1:9/', out }), true);
+  assert.strictEqual(fs.readFileSync(out, 'utf8'), 'PNGDATA');
+  assert.strictEqual(await shot.captureChrome(path.join(dir, 'missing'), { url: 'http://127.0.0.1:9/', out: path.join(dir, 'b.png') }), false);
+  assert.deepStrictEqual(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('buc-chrome-')), [], 'the temporary profile is removed');
+});
+
+test('capturePlaywright clicks, saves a PNG and audits the lying-UI fixture', { skip: !playwrightDir() && 'Playwright is not installed' }, async () => {
+  const port = await shot.freePort();
+  const url = `http://127.0.0.1:${port}/`;
+  const child = shot.startServer('node server.js', FIXTURE, { PORT: String(port) });
+  const dir = tmp('buc-shot-');
+  try {
+    assert.ok(await shot.waitFor(url, 10000));
+    const mod = require(playwrightDir());
+    const all = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'all.png'), audit: true, clicks: ['text=Details'] });
+    assert.ok(fs.statSync(path.join(dir, 'all.png')).size > 5000);
+    assert.ok(all.length <= 5);
+    assert.match(all[0], /^horizontal overflow: the page is \d+px wide in a 1280px viewport; div\.banner/);
+    assert.ok(all.some((f) => /^clipped text: div\.price-tag "Subscribe/.test(f)), all.join('\n'));
+    assert.ok(all.some((f) => /^overlap: button\.save "Save" and button\.cancel "Cancel" share \d+x40px/.test(f)), all.join('\n'));
+    const limited = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'l.png'), audit: true, classes: ['price-tag'] });
+    assert.ok(limited.some((f) => f.startsWith('clipped text:')));
+    assert.ok(!limited.some((f) => f.startsWith('overlap:')), 'findings outside the given classes are dropped');
+    const none = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'n.png'), audit: true, classes: [] });
+    assert.deepStrictEqual(none.map((f) => f.split(':')[0]), ['horizontal overflow']);
+    assert.deepStrictEqual(await shot.capturePlaywright(mod, { url, out: path.join(dir, 'p.png') }), []);
+  } finally {
+    await shot.stopServer(child);
+  }
+  assert.strictEqual(await shot.ping(url), false);
+});
+
 // end
