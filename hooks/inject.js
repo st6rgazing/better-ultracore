@@ -8,6 +8,7 @@ const { retrieve, render } = require('../lib/rules/retrieve');
 const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
+const habits = require('../lib/rules/habits');
 const { intentLine, correctionLine } = require('../lib/intent');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
@@ -72,6 +73,7 @@ function run(input) {
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
   const repo = root ? repoKey(root.trim()) : null;
   try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
+  habits.capture(prompt);
   const { matched: all, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
   const fixed = [];
   if (root) {
