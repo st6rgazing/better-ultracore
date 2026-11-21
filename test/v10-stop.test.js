@@ -122,4 +122,15 @@ test('handsoff-no-edits blocks edits on a HANDSOFF turn and in a hands-off repo,
   });
 });
 
+test('sweepLiteral finds the string a sweep must remove and ignores plain words', () => {
+  const lit = (p) => (check.sweepLiteral(p) || {}).literal;
+  assert.deepStrictEqual(check.sweepLiteral('rename "Sign in" to "Log in" everywhere'), { literal: 'Sign in', next: 'Log in' });
+  assert.strictEqual(lit('remove every "Beta" badge across the whole app'), 'Beta');
+  assert.strictEqual(lit('remove all console.log everywhere'), 'console.log');
+  assert.strictEqual(lit('get rid of all references to oldApi throughout'), 'oldApi');
+  assert.strictEqual(lit('remove every TODO in the repo'), 'TODO');
+  assert.strictEqual(lit('remove the unused imports everywhere'), undefined);
+  assert.strictEqual(lit('make every page use the new header'), undefined);
+});
+
 // end
