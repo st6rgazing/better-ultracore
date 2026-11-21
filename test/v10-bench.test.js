@@ -256,3 +256,41 @@ test('chain: a corrected correction becomes one case with the later fix', () => 
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+const pool = () => {
+  const out = [];
+  let n = 0;
+  for (const repo of ['/r/one', '/r/two', '/r/three']) for (let i = 0; i < 8; i++) {
+    n++;
+    out.push({ id: `c${String(n).padStart(2, '0')}`, session: `s${n}`, idx: 1, repo, kind: ['show', 'wide', 'narrow', 'other'][i % 4], ui: i % 2 === 0, c: { idx: 2, visible: i % 3 === 0 } });
+  }
+  return out;
+};
+
+test('sample: seeded, reproducible, within quotas', () => {
+  const a = mc.sample(pool(), { seed: 10 });
+  assert.deepStrictEqual(a.map((c) => c.id), mc.sample(pool(), { seed: 10 }).map((c) => c.id));
+  assert.notDeepStrictEqual(a.map((c) => c.id), mc.sample(pool(), { seed: 11 }).map((c) => c.id));
+  assert.strictEqual(a.length, 12);
+  const count = (f) => a.filter(f).length;
+  for (const r of ['/r/one', '/r/two', '/r/three']) assert.ok(count((c) => c.repo === r) <= 5 && count((c) => c.repo === r) >= 1);
+  assert.ok(count((c) => !c.ui) >= 4);
+  assert.ok(count((c) => c.kind === 'wide') >= 2);
+  assert.ok(count((c) => c.kind === 'narrow') >= 2);
+  assert.ok(count((c) => c.kind === 'show') >= 1);
+  // a skipped id never comes back and does not reshuffle the rest
+  const b = mc.sample(pool(), { seed: 10, skip: [a[0].id] });
+  assert.ok(!b.some((c) => c.id === a[0].id));
+  assert.deepStrictEqual(mc.shuffle(pool(), 10).map((c) => c.id), mc.shuffle(pool().reverse(), 10).map((c) => c.id));
+});
+
+test('sample: fewer survivors than the target ships fewer, and neighbours in one session are not both picked', () => {
+  const few = [
+    { id: 'a', session: 's', idx: 10, repo: '/r', kind: 'other', ui: true, c: { idx: 11, visible: false } },
+    { id: 'b', session: 's', idx: 12, repo: '/r', kind: 'other', ui: true, c: { idx: 13, visible: false } },
+    { id: 'c', session: 's', idx: 30, repo: '/r', kind: 'other', ui: true, c: { idx: 31, visible: false } },
+  ];
+  const got = mc.sample(few, { seed: 10 }).map((c) => c.id).sort();
+  assert.strictEqual(got.length, 2);
+  assert.ok(got.includes('c'));
+});
+

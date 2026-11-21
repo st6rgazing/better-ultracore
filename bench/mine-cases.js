@@ -321,4 +321,32 @@ function shuffle(items, seed) {
   return a;
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle };
+const DEFAULT_QUOTAS = { total: 12, perRepo: 5, minRepos: 3, nonUi: 4, wide: 2, narrow: 2, show: 1 };
+
+// Step 3: seeded sample within quotas, no hand-picking. Order: shuffled, corrections the miner could not see first.
+// Minimum quotas are filled in a fixed order (show, wide, narrow, non-UI, repo spread), then the rest in order.
+// A candidate within 3 turns of one already picked (or in avoid) is passed over, so cases never share a thread.
+function sample(cands, { seed = 10, quotas = DEFAULT_QUOTAS, skip = [], avoid = [] } = {}) {
+  const q = { ...DEFAULT_QUOTAS, ...quotas };
+  const order = shuffle(cands, seed).filter((c) => !skip.includes(c.id));
+  const pool = [...order.filter((c) => !c.c.visible), ...order.filter((c) => c.c.visible)];
+  const picked = [];
+  const perRepo = (r) => picked.filter((p) => p.repo === r).length;
+  const end = (c) => c.last_idx ?? c.c.idx;
+  const near = (a, b) => a.session === b.session && a.idx <= end(b) + 3 && b.idx <= end(a) + 3;
+  const take = (pred) => {
+    const c = pool.find((x) => !picked.includes(x) && perRepo(x.repo) < q.perRepo && ![...picked, ...avoid].some((y) => near(x, y)) && pred(x));
+    if (c && picked.length < q.total) picked.push(c);
+    return !!c;
+  };
+  const fill = (count, pred) => { while (picked.filter(pred).length < count && take(pred)); };
+  fill(q.show, (c) => c.kind === 'show');
+  fill(q.wide, (c) => c.kind === 'wide');
+  fill(q.narrow, (c) => c.kind === 'narrow');
+  fill(q.nonUi, (c) => !c.ui);
+  while (new Set(picked.map((p) => p.repo)).size < q.minRepos && take((c) => !picked.some((p) => p.repo === c.repo)));
+  while (picked.length < q.total && take(() => true));
+  return picked;
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, DEFAULT_QUOTAS };
