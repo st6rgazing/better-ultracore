@@ -52,3 +52,29 @@ test('edit-unrun is soft and fires only on a bug-fix edit with no run after the 
   assert.strictEqual(evidence.unrun(turn({ lastEditAt: undefined }), say('It crashes because of x.')).pass, true);
   assert.strictEqual(evidence.unrun(turn({ intent: 'UNDO' }), say('Restored.')).pass, true);
 });
+
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const store = require('../lib/rules/store');
+
+function withHome(fn, env = {}) {
+  const keys = ['BUC_HOME', 'BUC_OFF', ...Object.keys(env)];
+  const old = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  Object.assign(process.env, { BUC_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'buc-ev-')), BUC_OFF: '', ...env });
+  try { return fn(); } finally {
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test('stopChecks reads the turn file, reports one gap once and honours BUC_OFF', () => {
+  withHome(() => {
+    assert.deepStrictEqual(evidence.stopChecks('none', say('All tests pass.')), []);
+    store.patchTurn('e', { kind: 'edit', prompt: 'fix the crash', toolCalls: 2, lastEditAt: 2 });
+    const both = evidence.stopChecks('e', say('Fixed. All tests pass.'));
+    assert.deepStrictEqual(both.map((r) => [r.id, r.pass]), [['unbacked-claim', false]]);
+    assert.deepStrictEqual(evidence.stopChecks('e', say('Fixed.')).map((r) => [r.id, r.pass]), [['unbacked-claim', true], ['edit-unrun', false]]);
+    process.env.BUC_OFF = 'unbacked-claim,edit-unrun';
+    assert.deepStrictEqual(evidence.stopChecks('e', say('Fixed. All tests pass.')), []);
+  });
+});
