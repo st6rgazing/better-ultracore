@@ -15,3 +15,9 @@ test('keywordUse tells an opt-in from a mention in quotes, code, a name or as th
   for (const p of mention) assert.strictEqual(orch.keywordUse(p), 'mention', p);
   for (const p of ['fix the login bug', '', undefined]) assert.strictEqual(orch.keywordUse(p), 'none', String(p));
 });
+
+test('isSmall is true for one short request and false for lists, breadth and long prompts', () => {
+  for (const p of ['ultracode fix the typo in the footer', 'make the button blue', 'ultracode add a --json flag to the status command']) assert.strictEqual(orch.isSmall(p), true, p);
+  const big = ['ultracode refactor the whole store', 'ultracode\n1. add login\n2. add logout', 'fix every page that uses the old header', `ultracode ${'word '.repeat(30)}`, 'ultracode', ''];
+  for (const p of big) assert.strictEqual(orch.isSmall(p), false, p);
+});
