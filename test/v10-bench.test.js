@@ -284,6 +284,14 @@ test('criteria: each mechanical reject has its reason', () => {
   assert.strictEqual(mc.rejectControl(cand({ ack: true }), ctl), 'next turn has a correction cue');
 });
 
+test('labelOf: a label written for the next typed turn does not apply once C is a queued message', () => {
+  const labels = { 'aaaaaaaa-001': { label: 'correction' }, 'aaaaaaaa-001>q002': { label: 'new-request' } };
+  assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001' }, labels).label, 'correction');
+  assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001', key: 'aaaaaaaa-001>q002' }, labels).label, 'new-request');
+  assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001', key: 'aaaaaaaa-001>q009' }, labels), undefined);
+  assert.strictEqual(mc.rejectCorrection(cand({ key: 'aaaaaaaa-001>q009' }), { labels: { 'aaaaaaaa-001': { label: 'correction' } } }), 'unlabelled');
+});
+
 test('chain: a corrected correction becomes one case with the later fix', () => {
   const fx = fixture();
   try {

@@ -176,7 +176,7 @@ function triples(file) {
     const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
     const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
     out.push({
-      id: `${P.session.slice(0, 8)}-${P.n}`,
+      id: `${P.session.slice(0, 8)}-${P.n}`, ...(C.queued ? { key: `${P.session.slice(0, 8)}-${P.n}>${C.n}` } : {}),
       session: P.session, idx: P.idx, turns: turns.length, repo, ref,
       p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
       c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, queued: !!C.queued, cue: isCue(C.text), visible: minerVisible(C.text) },
@@ -191,6 +191,10 @@ function triples(file) {
 function mine(root, { skip = [] } = {}) {
   return transcripts(root, skip).flatMap(triples);
 }
+
+// The label of a pair. Pairs are labelled by id; a pair whose C is a queued message or not the next request has
+// its own key (id>C), so a label written for another C never applies to it.
+const labelOf = (c, labels) => (labels || {})[c.key || c.id];
 
 const words = (text) => text.trim().split(/\s+/).filter(Boolean).length;
 
@@ -293,7 +297,7 @@ function rejectCorrection(c, ctx) {
   if (!c.work) return 'no assistant edits after P';
   if (c.fix_lines === null || c.fix_lines === 0) return 'empty base..fix';
   if (c.fix_lines > 300) return 'base..fix over 300 lines';
-  const label = (ctx.labels || {})[c.id];
+  const label = labelOf(c, ctx.labels);
   if (!label) return 'unlabelled';
   if (label.label !== 'correction') return `C is not a correction (${label.label})`;
   return leaks(c, ctx.rules || [], ctx.visible || []);
@@ -309,7 +313,7 @@ function rejectControl(c, ctx) {
   if (!c.ack) return 'no go-ahead after the request';
   if (c.done_lines === null || c.done_lines === 0) return 'empty base..done';
   if (c.done_lines > 300) return 'base..done over 300 lines';
-  const label = (ctx.labels || {})[c.id];
+  const label = labelOf(c, ctx.labels);
   if (!label) return 'unlabelled';
   if (label.label !== 'accepted') return `not an accepted request (${label.label})`;
   return null;
@@ -319,7 +323,7 @@ function rejectControl(c, ctx) {
 // labelled a correction, the two are one case: the first keeps its P and C, takes the later fix, and the later
 // pair is dropped. Repeats down the chain. Returns the merged candidates and the ids absorbed into each.
 function chain(cands, labels) {
-  const isCorr = (c) => !!c && (labels[c.id] || {}).label === 'correction';
+  const isCorr = (c) => !!c && (labelOf(c, labels) || {}).label === 'correction';
   const at = new Map(cands.map((c) => [`${c.session}|${c.idx}`, c]));
   const absorbed = new Map();
   const out = [];
@@ -519,5 +523,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));
