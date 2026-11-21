@@ -46,4 +46,22 @@ function quantile(sorted, q) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 
-module.exports = { rng, value, caseDiffs, quantile };
+// Case-clustered paired bootstrap of mean(armA) - mean(armB): cases are resampled with replacement, runs are not.
+// Returns the mean difference over cases and a percentile interval (90% by default).
+function pairedBootstrap(rows, armA, armB, metric, { B = 10000, seed = 10, level = 0.9 } = {}) {
+  const d = caseDiffs(rows, armA, armB, metric).map((x) => x.diff);
+  const n = d.length;
+  if (!n) return { diff: null, lo: null, hi: null, cases: 0, B, level, seed };
+  const avg = d.reduce((a, b) => a + b, 0) / n;
+  const next = rng(seed);
+  const means = new Array(B);
+  for (let b = 0; b < B; b++) {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += d[Math.floor(next() * n)];
+    means[b] = s / n;
+  }
+  means.sort((x, y) => x - y);
+  return { diff: avg, lo: quantile(means, (1 - level) / 2), hi: quantile(means, 1 - (1 - level) / 2), cases: n, B, level, seed };
+}
+
+module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap };
