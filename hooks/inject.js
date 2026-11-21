@@ -9,7 +9,7 @@ const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
 const habits = require('../lib/rules/habits');
-const { readIntent, intentMode, correctionLine, SELF, SELF_SHORT, HANDSOFF_LINE } = require('../lib/intent');
+const { readIntent, intentMode, readCorrection, SELF, SELF_SHORT, HANDSOFF_LINE } = require('../lib/intent');
 const handsoff = require('../lib/handsoff');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
@@ -90,25 +90,29 @@ function run(input) {
   const handsOff = Boolean(repo) && kind === 'edit' && !handsoff.isApply(prompt) && handsoff.active(repo, { root: root.trim() });
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
   if (tc && !handsOff) fixed.push(TYPECHECK_LINE);
-  const intent = handsOff ? HANDSOFF_LINE : correctionLine(prompt, hadPrev) || readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) }).line;
+  const correction = readCorrection(prompt, hadPrev);
+  const reading = handsOff ? { name: 'HANDSOFF', line: HANDSOFF_LINE } : correction.line ? correction : readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) });
+  const intent = reading.line;
   fixed.push(intent, handsOff ? '' : probeLine(prompt));
   capFixed(fixed, [tc && TYPECHECK_LINE, fixed[fixed.length - 1], intent, SELF_SHORT]);
   // A learned rule is worth more than the long form of the self-classification line.
   if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
-  if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
+  // Read before saveLastTurn starts the new record: the files the previous turn changed, for the undo check.
+  const prev = sessionId ? store.loadLastTurn(sessionId) : null;
+  if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: store.now() });
   if (sessionId && !root) store.clearTurn(sessionId);
-  if (root) {
+  if (root && sessionId) {
+    // Written on every prompt in a repo, also with no checks: the Stop and tool hooks read intent, ui and the baseline.
     const checked = matched.filter((r) => r.check.cmd);
-    const checks = [...checked.map((r) => r.check.cmd), ...(tc ? ['typecheck'] : [])];
-    if (sessionId && !checks.length) store.clearTurn(sessionId);
-    if (sessionId && checks.length) {
-      store.writeTurn(sessionId, {
-        session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
-        porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
-        rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks,
-      });
-    }
+    const shown = fixed.includes(intent) || (intent === SELF && fixed.includes(SELF_SHORT));
+    store.writeTurn(sessionId, {
+      session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
+      porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
+      rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks: [...checked.map((r) => r.check.cmd), ...(tc ? ['typecheck'] : [])],
+      intent: shown ? reading.name : '', ui: false, toolCalls: 0, shotAt: 0,
+      ...(prev && prev.files && { prevFiles: prev.files }),
+    });
   }
   const text = [block, ...fixed].filter(Boolean).join('\n');
   return text ? { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } } : null;

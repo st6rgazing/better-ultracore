@@ -158,3 +158,46 @@ test('readCorrection names the undo and misread readings', () => {
   assert.deepStrictEqual(intent.readCorrection('add a logout button', true), { name: '', line: '', pattern: '' });
   assert.deepStrictEqual(intent.readCorrection('no thats not what i meant', false), { name: '', line: '', pattern: '' });
 });
+
+test('the turn file is written on every prompt in a repo and names the reading', () => {
+  const home = tmp('buc-home-');
+  const dir = repo();
+  const name = (prompt, id) => { inject({ prompt, cwd: dir, session_id: id }, home); return turn(home, id).intent; };
+  assert.strictEqual(name('add a back button to the settings page', 'n1'), 'SELF');
+  assert.strictEqual(name('make the card slightly smaller', 'n2'), 'EXACT');
+  assert.strictEqual(name('rename Foo everywhere', 'n3'), 'SWEEP');
+  assert.strictEqual(name('explain how the router works', 'n4'), 'SHOW');
+  assert.strictEqual(name('add a flag, it must print JSON', 'n5'), '');
+  assert.strictEqual(name('no thats not what i meant', 'n1'), 'MISREAD');
+  assert.strictEqual(name('no wait undo ur changes just show me how', 'n1'), 'UNDO');
+  const t = turn(home, 'n1');
+  assert.deepStrictEqual([t.checks, t.rules, t.ui, t.toolCalls, t.shotAt], [[], [], false, 0, 0]);
+  assert.strictEqual(t.root, fs.realpathSync(dir));
+  assert.ok(t.head);
+});
+
+test('the turn file carries the files the previous turn changed and resets the tool count', () => {
+  const home = tmp('buc-home-');
+  const dir = repo();
+  const store = path.join(__dirname, '..', 'lib', 'rules', 'store.js');
+  const run = (code) => spawnSync('node', ['-e', code, store], { encoding: 'utf8', env: { ...process.env, BUC_HOME: home } });
+  inject({ prompt: 'add a footer', cwd: dir, session_id: 'pf' }, home);
+  assert.strictEqual(turn(home, 'pf').prevFiles, undefined);
+  const r = run("const s = require(process.argv[1]); s.saveLastTurn('pf', { head: 'abc', files: { 'app.js': 'h1', 'new.js': null } }); s.patchTurn('pf', { toolCalls: 7, shotAt: 5 });");
+  assert.strictEqual(r.status, 0, r.stderr);
+  inject({ prompt: 'no thats not what i meant', cwd: dir, session_id: 'pf' }, home);
+  const t = turn(home, 'pf');
+  assert.deepStrictEqual(t.prevFiles, { 'app.js': 'h1', 'new.js': null });
+  assert.deepStrictEqual([t.toolCalls, t.shotAt], [0, 0]);
+});
+
+test('a hands-off turn is named HANDSOFF in the turn file', () => {
+  const home = tmp('buc-home-');
+  const dir = repo();
+  const key = require('../lib/context').repoKey(fs.realpathSync(dir));
+  fs.writeFileSync(path.join(home, 'repos.json'), JSON.stringify({ [key]: { handsOff: 'on', events: [] } }));
+  inject({ prompt: 'add a footer', cwd: dir, session_id: 'hn' }, home);
+  assert.strictEqual(turn(home, 'hn').intent, 'HANDSOFF');
+  inject({ prompt: 'apply', cwd: dir, session_id: 'hn' }, home);
+  assert.strictEqual(turn(home, 'hn').intent, '');
+});
