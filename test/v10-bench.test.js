@@ -31,3 +31,9 @@ const ROWS = [
 test('caseDiffs pairs arms within a case and drops unpaired cases', () => {
   assert.deepStrictEqual(stats.caseDiffs(ROWS, 'buc', 'plain', 'interventions'), [{ case: 'x', diff: -1.5 }, { case: 'y', diff: 0 }]);
 });
+
+test('quantile interpolates', () => {
+  assert.strictEqual(stats.quantile([1, 2, 3, 4, 5], 0.5), 3);
+  assert.strictEqual(stats.quantile([0, 10], 0.25), 2.5);
+  assert.strictEqual(stats.quantile([], 0.5), null);
+});

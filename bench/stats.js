@@ -37,4 +37,13 @@ function caseDiffs(rows, armA, armB, metric) {
   return out;
 }
 
-module.exports = { rng, value, caseDiffs };
+// Quantile of a sorted array, linear interpolation.
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+module.exports = { rng, value, caseDiffs, quantile };
