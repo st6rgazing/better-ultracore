@@ -477,3 +477,18 @@ test('buc rules as-of refuses a missing --out, the live store and a bad date', (
   const bad = buc(['rules', 'as-of', '--before', 'yesterday-ish', '--out', path.join(home, 'x')], { BUC_HOME: home });
   assert.deepStrictEqual([bad.status, /bad --before/.test(bad.stderr), fs.existsSync(path.join(home, 'x'))], [1, true, false]);
 });
+
+test('buc rules pin --global drops the repo scope and pins; list shows the scope', () => {
+  const home = fresh();
+  habits.capture(HABIT, 'A');
+  assert.match(buc(['rules', 'list'], { BUC_HOME: home }).stdout, /\tpinned\tonly=A\t/);
+  assert.strictEqual(buc(['rules', 'pin', '--global', 'commit-as-you-go'], { BUC_HOME: home }).status, 0);
+  assert.deepStrictEqual([store.loadRules()[0].scope, store.loadRules()[0].pinned], [undefined, true]);
+  assert.deepStrictEqual(habitIn('B'), ['commit-as-you-go']);
+  assert.ok(!/only=/.test(buc(['rules', 'list'], { BUC_HOME: home }).stdout));
+  buc(['rules', 'pin', 'commit-as-you-go', '--global'], { BUC_HOME: home });
+  assert.strictEqual(store.loadRules()[0].pinned, true);
+  buc(['rules', 'pin', 'commit-as-you-go'], { BUC_HOME: home });
+  assert.strictEqual(store.loadRules()[0].pinned, false);
+  assert.match(buc(['rules', 'pin', '--global', 'nope'], { BUC_HOME: home }).stderr, /no rule nope/);
+});
