@@ -228,4 +228,21 @@ test('ended-with-question fires on a short edit prompt answered by a question wi
   assert.strictEqual(run('ended-with-question', t, ask).pass, true, 'something changed');
 });
 
+test('wide-diff fires on a literal turn over 5 files or 150 lines, and not on other intents', () => {
+  const dir = repo({ 'app.js': `${Array(100).fill('old').join('\n')}\n` });
+  for (const intent of ['LITERAL', 'EXACT']) assert.strictEqual(run('wide-diff', turn(dir, 'set the title to Home', { intent })).pass, true);
+  const t = turn(dir, 'set the title to Home', { intent: 'LITERAL' });
+  for (let i = 0; i < 5; i++) write(dir, `f${i}.js`, 'x\n');
+  assert.strictEqual(run('wide-diff', t).pass, true, '5 files is within the limit');
+  write(dir, 'f5.js', 'x\n');
+  const r = run('wide-diff', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /^6 files and 6 lines changed/);
+  assert.strictEqual(run('wide-diff', { ...t, intent: 'FEATURE' }).pass, true);
+  assert.strictEqual(run('wide-diff', { ...t, intent: undefined }).pass, true);
+  for (let i = 0; i < 6; i++) fs.unlinkSync(path.join(dir, `f${i}.js`));
+  write(dir, 'app.js', `${Array(100).fill('new').join('\n')}\n`);
+  assert.match(run('wide-diff', t).detail, /^1 files and 200 lines changed/);
+});
+
 // end
