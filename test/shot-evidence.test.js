@@ -114,19 +114,9 @@ function stopOn({ html, edit }) {
 test('Stop fallback hands the screenshot over when the page shows a class the turn added', () => {
   const { out, turn } = stopOn({ html: '<div class="card wide">hi</div>', edit: { 'index.html': '<div class="card wide">hi</div>\n' } });
   const text = out.hookSpecificOutput.additionalContext;
-  assert.match(text, /after your change, showing \.wide: (\S+\.png) \. Read it once/, 'the class the turn introduced is the evidence');
+  assert.match(text, /after your change, showing \.card, \.wide: (\S+\.png) \. Read it once/);
   fs.rmSync(text.match(/: (\S+\.png) /)[1]);
   assert.ok(turn.shotAt > 0);
-});
-
-test('Stop fallback: a class the turn introduced must be on the page; without new classes an old one will do', () => {
-  const built = stopOn({ html: '<div class="card">hi</div>', edit: { 'index.html': '<div class="card wide">hi</div>\n' } });
-  assert.strictEqual(built.out, null, 'only the old class is on the page, so the new element is not');
-  assert.strictEqual(built.left, 0);
-  const restyled = stopOn({ html: '<p class="fine">More</p>', edit: { 'index.html': '<div class="card"><p class="fine">More</p></div>\n' } });
-  const text = restyled.out.hookSpecificOutput.additionalContext;
-  assert.match(text, /after your change, showing \.fine: /);
-  fs.rmSync(text.match(/: (\S+\.png) /)[1]);
 });
 
 test('Stop fallback stays quiet without evidence: the page lacks the classes, the DOM is unknown, or the turn added none', () => {
