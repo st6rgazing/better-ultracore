@@ -100,3 +100,27 @@ test('inspect honours each BUC_OFF name', () => {
     assert.deepStrictEqual([r.notes, r.stop, r.patch.agents], [[], '', 18]);
   });
 });
+
+test('the tool hook adds agent notes to its context and exits 2 with the reason on a hard stop', () => {
+  const { spawnSync } = require('node:child_process');
+  const store = require('../lib/rules/store');
+  const home = tmp();
+  const dir = tmp();
+  const hook = (input) => spawnSync('node', [path.join(__dirname, '..', 'hooks', 'track.js')], { input: JSON.stringify({ session_id: 'a', cwd: dir, hook_event_name: 'PostToolBatch', ...input }), encoding: 'utf8', env: { ...process.env, BUC_HOME: home, BUC_OFF: '' } });
+  const note = hook({ tool_calls: [agent({ prompt: 'one' })] });
+  assert.strictEqual(note.status, 0);
+  const out = JSON.parse(note.stdout);
+  assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolBatch');
+  assert.match(out.hookSpecificOutput.additionalContext, /without a model/);
+  const quiet = hook({ tool_calls: [agent({ prompt: 'two', model: 'haiku' })] });
+  assert.deepStrictEqual([quiet.status, quiet.stdout], [0, '']);
+  const stop = hook({ tool_calls: [agent({ prompt: 'three', model: 'haiku' }, 'You have hit your limit.')] });
+  assert.strictEqual(stop.status, 2);
+  assert.match(stop.stderr, /usage or account limit/);
+  assert.strictEqual(stop.stdout, '');
+  const old = process.env.BUC_HOME;
+  process.env.BUC_HOME = home;
+  try { assert.deepStrictEqual([store.readTurn('a').agents, store.readTurn('a').toolCalls], [3, 3]); } finally { if (old === undefined) delete process.env.BUC_HOME; else process.env.BUC_HOME = old; }
+  const sub = hook({ agent_id: 'x', tool_calls: [agent({ prompt: 'four' }, 'You have hit your limit.')] });
+  assert.deepStrictEqual([sub.status, sub.stdout], [0, ''], 'a subagent is never stopped or counted');
+});
