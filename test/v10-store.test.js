@@ -373,3 +373,16 @@ test('session end queues corrections with their own time, repo and hash, and bum
   assert.deepStrictEqual(r.sources[1], { session: 'S9', repo: 'myrepo', ts: '2026-06-20T10:05:00.000Z', h, origin: 'bump' });
   assert.deepStrictEqual(store.asOf([r], { excludeSessions: ['S9'] })[0].count, 1);
 });
+
+test('feedback.onPrompt records hands-off evidence and queues corrections with hash and prompt time', () => {
+  fresh();
+  const feedback = require('../lib/rules/feedback');
+  assert.strictEqual(feedback.onPrompt({ prompt: 'just show me how the nav works', sessionId: 's1', repo: 'r1' }), null);
+  feedback.onPrompt({ prompt: 'make the nav sticky', sessionId: 's1', repo: 'r1' });
+  feedback.onPrompt({ prompt: 'make the nav sticky', sessionId: 's1', repo: null });
+  assert.deepStrictEqual(store.repoState('r1').events.map((e) => e.e), ['handsoff', 'edit']);
+  store.saveLastTurn('s1', { rules: ['only-named'], repo: 'r1' });
+  withEnv({ BUC_NOW: '2026-07-01T00:00:00.000Z' }, () => feedback.onPrompt({ prompt: 'no, that is not what I meant', sessionId: 's1', repo: 'r1' }));
+  const [entry] = store.readInbox();
+  assert.deepStrictEqual([entry.h, entry.ts, entry.repo], [store.hash('no, that is not what I meant'), '2026-07-01T00:00:00.000Z', 'r1']);
+});
