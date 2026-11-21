@@ -107,4 +107,14 @@ function resolveShas(repo, ref, p, c, n) {
   return { base, wrong, fix, done };
 }
 
-module.exports = { relayed, parseSession, transcripts, repoOf, resolveShas };
+// Size and files of a diff between two commits.
+function diffStat(repo, a, b) {
+  if (!a || !b) return { lines: null, files: [] };
+  const rows = git(repo, 'diff', '--numstat', a, b).split('\n').filter(Boolean).map((l) => l.split('\t'));
+  return { lines: rows.reduce((s, [x, y]) => s + (+x || 0) + (+y || 0), 0), files: rows.map((r) => r[2]) };
+}
+
+const isCue = (text) => CUE.test(text);
+const minerVisible = (text) => text.trim().length <= MINER_MAX_LEN && isCue(text);
+
+module.exports = { relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible };

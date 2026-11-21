@@ -150,3 +150,15 @@ test('transcripts skips temp project dirs', () => {
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('resolveShas and diffStat resolve by timestamp', () => {
+  const fx = fixture();
+  try {
+    assert.strictEqual(mc.repoOf(fx.repo), fx.repo);
+    assert.strictEqual(mc.repoOf('/nonexistent/dir'), null);
+    assert.deepStrictEqual(mc.resolveShas(fx.repo, 'HEAD', T(10), T(20), T(30)), { base: fx.sha.base, wrong: fx.sha.wrong, fix: fx.sha.fix, done: fx.sha.wrong });
+    // no commit after the correction: no fix
+    assert.strictEqual(mc.resolveShas(fx.repo, 'HEAD', T(10), T(25), T(30)).fix, null);
+    assert.deepStrictEqual(mc.diffStat(fx.repo, fx.sha.base, fx.sha.fix), { lines: 2, files: ['fee.txt'] });
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
