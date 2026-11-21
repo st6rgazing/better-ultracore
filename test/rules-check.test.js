@@ -198,7 +198,7 @@ test('typecheck blocks with output after a change, skips when idle, missing deps
   const dir = repo();
   fs.mkdirSync(path.join(dir, '.claude'));
   write(dir, '.claude/buc.json', JSON.stringify({ typecheckCmd: 'node tc.js' }));
-  write(dir, 'tc.js', 'console.log("app.ts(1,1): error TS2304"); process.exit(2)\n');
+  write(dir, 'tc.js', 'console.log("app.js(1,1): error TS2304"); process.exit(2)\n');
   const t = turn(dir, 'edit app');
   assert.strictEqual(run('typecheck', t).pass, true);
   write(dir, 'app.js', 'changed\n');

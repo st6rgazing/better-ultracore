@@ -1,28 +1,74 @@
 'use strict';
-// Stop: run the deterministic checks of this turn's matched rules; a failure blocks once so the model revises.
-const { checkSession } = require('../lib/rules/check');
+// Stop: run this turn's checks. A failed hard check blocks once so the model revises; a failed soft check
+// is returned as additionalContext (feedback, not an error). One continuation per turn: nothing runs when stop_hook_active.
+// When UI files changed and the agent took no screenshot, the hook takes one (45 s at most) and hands over the PNG path.
+const fs = require('node:fs');
+const path = require('node:path');
+const { checkSession, turnFiles, changedFiles, addedLines } = require('../lib/rules/check');
+const { shotSync, resolveServer, isUiFile, classesIn } = require('../lib/shot');
 const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 
 const MAX_REASON = 600;
+const MAX_CONTEXT = 900;
+const SHOT_MS = 45000;
 
-function run(input) {
-  if (!input.session_id) return null;
-  if (input.stop_hook_active) {
-    store.clearTurn(input.session_id);
-    return null;
-  }
-  const failed = checkSession(input.session_id).filter((r) => !r.pass);
-  if (!failed.length) {
-    store.clearTurn(input.session_id);
-    return null;
-  }
-  store.violate(failed.flatMap((r) => r.rules));
-  const reason = `Fix before finishing: ${failed.map((r) => `${r.id}: ${r.detail}`).join('; ')}`;
-  return { decision: 'block', reason: redact(reason).slice(0, MAX_REASON) };
+// Keeps what this turn changed, {head, files}, in the last-turn record so the next prompt can ask for it to be undone.
+function remember(sessionId) {
+  try {
+    const turn = store.readTurn(sessionId);
+    if (!turn || !turn.root || !('porcelain' in turn)) return;
+    store.saveLastTurn(sessionId, { head: turn.head || null, files: turnFiles(turn.root, turn) });
+  } catch { /* best effort */ }
 }
 
-module.exports = { run };
+// The fallback screenshot: UI files changed this turn, no buc-shot was run, and the repo has a dev server to start.
+// Returns the feedback line, or '' when there is nothing to show (also when the screenshot was skipped). BUC_OFF name: shot.
+// The line is already redacted where it quotes the page; the PNG path must stay as it is.
+function fallbackShot(sessionId) {
+  try {
+    const turn = store.readTurn(sessionId);
+    if (!turn || !turn.root || !('porcelain' in turn) || turn.shotAt || turn.kind === 'advice') return '';
+    const root = turn.root;
+    if (store.off('shot', root)) return '';
+    const ui = changedFiles(root, turn).filter((f) => isUiFile(f) && fs.existsSync(path.join(root, f)));
+    if (!ui.length || resolveServer(root, 0).skip) return '';
+    const r = shotSync({ root, path: '/', audit: true, classes: classesIn(addedLines(root, turn, ui)), timeoutMs: SHOT_MS });
+    if (r.status !== 'ok') return '';
+    store.patchTurn(sessionId, { shotAt: store.now() });
+    const audit = r.findings.length ? redact(` Layout audit: ${r.findings.join('; ')}.`) : '';
+    return `You changed UI files and took no screenshot. Here is ${r.url} after your change: ${r.png} . Read it once, check it shows what was asked and fix what does not.${audit}`;
+  } catch {
+    return '';
+  }
+}
+
+function run(input) {
+  const sessionId = input.session_id;
+  if (!sessionId) return null;
+  remember(sessionId);
+  if (input.stop_hook_active) {
+    store.clearTurn(sessionId);
+    return null;
+  }
+  const failed = checkSession(sessionId, input).filter((r) => !r.pass);
+  const hard = failed.filter((r) => !r.soft);
+  const notes = failed.filter((r) => r.soft).map((r) => redact(r.detail));
+  if (hard.length) {
+    store.violate(hard.flatMap((r) => r.rules));
+    const reason = [`Fix before finishing: ${hard.map((r) => `${r.id}: ${r.detail}`).join('; ')}`, ...notes].join('. Also: ');
+    return { decision: 'block', reason: redact(reason).slice(0, MAX_REASON) };
+  }
+  const seen = fallbackShot(sessionId);
+  if (seen) notes.push(seen);
+  if (!notes.length) {
+    store.clearTurn(sessionId);
+    return null;
+  }
+  return { hookSpecificOutput: { hookEventName: 'Stop', additionalContext: notes.join('\n').slice(0, MAX_CONTEXT) } };
+}
+
+module.exports = { run, remember, fallbackShot };
 
 if (require.main === module) {
   let raw = '';

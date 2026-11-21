@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lying UI fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.4 sans-serif; background: linear-gradient(135deg, #1d3557, #e63946 60%, #f1faee); min-height: 100vh; }
+  .card { margin: 40px; padding: 24px; width: 420px; background: #fff; border-radius: 12px; position: relative; height: 220px; }
+  /* Clipped: the label does not fit the fixed width. */
+  .price-tag { width: 70px; overflow: hidden; white-space: nowrap; }
+  /* Overlap: both buttons sit on the same spot. */
+  .save, .cancel { position: absolute; top: 150px; width: 120px; height: 40px; }
+  .save { left: 24px; }
+  .cancel { left: 80px; }
+  /* Horizontal overflow: wider than the viewport. */
+  .banner { width: 1600px; padding: 12px; background: #457b9d; color: #fff; }
+  .fine { margin-top: 12px; }
+</style>
+</head>
+<body>
+  <div class="banner">Free shipping on every order this week</div>
+  <div class="card">
+    <h1>Plan</h1>
+    <div class="price-tag">Subscribe for 9.99 per month</div>
+    <p class="fine">Cancel any time.</p>
+    <button class="save">Save</button>
+    <button class="cancel">Cancel</button>
+    <div id="opened" hidden>Panel is open</div>
+    <button class="details" style="position:absolute;top:24px;right:24px" onclick="document.getElementById('opened').hidden = false">Details</button>
+  </div>
+</body>
+</html>
