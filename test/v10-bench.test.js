@@ -130,3 +130,15 @@ test('relayed keeps only human trigger messages and unescapes them', () => {
   assert.deepStrictEqual(mc.relayed(text), ["it's <b> broken"]);
 });
 
+test('parseSession: user text turns in order with the work that followed; harness, sidechain and tool results are not turns', () => {
+  const fx = fixture();
+  try {
+    const { turns, end } = mc.parseSession(fx.file);
+    assert.deepStrictEqual(turns.map((t) => t.text), ['make the late fee five dollars instead of two', 'Deploy to live', 'not the monthly plan, the yearly plan fee', 'add a dark mode toggle to the header please']);
+    assert.deepStrictEqual(turns.map((t) => [t.edits, t.commits]), [[1, 0], [0, 0], [0, 1], [0, 0]]);
+    assert.strictEqual(turns[0].idx, 0);
+    assert.strictEqual(turns[2].ts, T(20));
+    assert.strictEqual(end, T(31));
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

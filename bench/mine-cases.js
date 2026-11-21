@@ -29,4 +29,43 @@ function relayed(text) {
   return out.filter(Boolean);
 }
 
-module.exports = { relayed };
+// One transcript -> ordered user text turns, each with the tool calls made before the next user turn.
+// Sidechain, meta, tool-result and harness entries are not turns.
+function parseSession(file) {
+  const turns = [];
+  let cur = null;
+  let end = null;
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    let o;
+    try { o = JSON.parse(line); } catch { continue; }
+    if (!o || !o.message || o.isSidechain) continue;
+    if (o.timestamp) end = o.timestamp;
+    const c = o.message.content;
+    if (o.type === 'assistant' && cur && Array.isArray(c)) {
+      for (const b of c) {
+        if (!b || b.type !== 'tool_use') continue;
+        cur.tools++;
+        if (EDIT_TOOLS.has(b.name)) cur.edits++;
+        if (b.name === 'Agent' || b.name === 'Task') cur.spawns++;
+        if (b.name === 'Bash' && /\bgit\b[^|;&]*\bcommit\b/.test((b.input && b.input.command) || '')) cur.commits++;
+      }
+      continue;
+    }
+    if (o.type !== 'user' || o.isMeta || o.isCompactSummary) continue;
+    const blocks = typeof c === 'string' ? [{ type: 'text', text: c }] : Array.isArray(c) ? c : [];
+    if (blocks.some((b) => b && b.type === 'tool_result')) continue;
+    let text = blocks.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim();
+    if (!text) continue;
+    const attached = /<wake\b[\s\S]*has-attachments?=|^\s*@"[^"]*\.(png|jpe?g|gif|webp)"/i.test(text);
+    if (/<wake\b/.test(text)) {
+      const human = relayed(text);
+      if (!human.length) continue;
+      text = human.join('\n');
+    } else if (HARNESS.test(text)) continue;
+    cur = { session: o.sessionId || path.basename(file, '.jsonl'), idx: turns.length, ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: 0, edits: 0, commits: 0, spawns: 0 };
+    turns.push(cur);
+  }
+  return { turns, end };
+}
+
+module.exports = { relayed, parseSession };
