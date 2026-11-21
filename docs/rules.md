@@ -13,7 +13,7 @@ Rules are short corrections learned from your own transcripts. A hook injects th
 | `id` | lowercase slug |
 | `rule` | the instruction, at most 25 words |
 | `when` | triggers: `keywords`, optional `paths` and `promptKinds` |
-| `check` | `cmd`: a built-in id (`advice-no-edits`, `only-named-files`, `no-ai-traces`, `no-emoji`, `exact-copy`, `check-cmd`, `small-commits`), or `question`: a yes/no judgment check |
+| `check` | `cmd`: a built-in id (`advice-no-edits`, `only-named-files`, `no-ai-traces`, `no-emoji`, `exact-copy`, `check-cmd`, `small-commits`, `commit-changes`), or `question`: a yes/no judgment check |
 | `kind` | `process`, `ui`, `code`, `git`, `output` or `communication` |
 | `count`, `last_seen`, `violations` | usage data used for ranking and decay |
 
