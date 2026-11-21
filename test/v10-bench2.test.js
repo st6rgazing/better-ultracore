@@ -41,3 +41,19 @@ test('held-out dirs are cases only with a case.json', () => {
     assert.ok(names.includes('trivial'));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('dry run rejects a case whose wrong state passes accept', () => {
+  const root = tmp('wrong');
+  try {
+    heldoutCase(root, 'ho-good', { wrong: 'nearly' });
+    heldoutCase(root, 'ho-bad', { wrong: 'fixed' });
+    const good = bench(['--dry', '--cases', 'ho-good'], root);
+    assert.strictEqual(good.status, 0, good.stderr);
+    assert.match(good.stdout, /ho-good: unsolved fails=true solved passes=true wrong fails=true/);
+    const bad = bench(['--dry', '--cases', 'ho-bad'], root);
+    assert.strictEqual(bad.status, 1);
+    assert.match(bad.stdout, /wrong fails=false/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// more tests below

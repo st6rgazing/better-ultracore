@@ -280,8 +280,17 @@ function dryRun(c) {
     const hasSolve = fs.existsSync(path.join(caseDir(c), 'solve.sh'));
     if (hasSolve) sh(path.join(caseDir(c), 'solve.sh'), dir);
     const solved = hasSolve ? sh(path.join(caseDir(c), 'accept.sh'), dir).status : null;
-    return { case: c, unsolved_fails: unsolved !== 0, solved_passes: hasSolve ? solved === 0 : null };
+    return { case: c, unsolved_fails: unsolved !== 0, solved_passes: hasSolve ? solved === 0 : null, wrong_fails: wrongFails(c, parent) };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+}
+
+// A case with wrong.sh (the state the user corrected) must fail accept there too. Fresh setup; null without wrong.sh.
+function wrongFails(c, parent) {
+  if (!fs.existsSync(path.join(caseDir(c), 'wrong.sh'))) return null;
+  const dir = path.join(parent, 'wrong');
+  sh(path.join(caseDir(c), 'setup.sh'), dir);
+  sh(path.join(caseDir(c), 'wrong.sh'), dir);
+  return sh(path.join(caseDir(c), 'accept.sh'), dir).status !== 0;
 }
 
 const mean = (xs) => { const v = xs.filter((x) => typeof x === 'number'); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
@@ -310,8 +319,8 @@ function main(argv) {
   if (f.dry) {
     console.log(`arms: ${Object.keys(ARMS).join(', ')}`);
     const res = cases.map(dryRun);
-    for (const r of res) console.log(`${r.case}: unsolved fails=${r.unsolved_fails} solved passes=${r.solved_passes === null ? 'n/a (no solve.sh)' : r.solved_passes}`);
-    process.exitCode = res.every((r) => r.unsolved_fails && r.solved_passes !== false) ? 0 : 1;
+    for (const r of res) console.log(`${r.case}: unsolved fails=${r.unsolved_fails} solved passes=${r.solved_passes === null ? 'n/a (no solve.sh)' : r.solved_passes}${r.wrong_fails === null ? '' : ` wrong fails=${r.wrong_fails}`}`);
+    process.exitCode = res.every((r) => r.unsolved_fails && r.solved_passes !== false && r.wrong_fails !== false) ? 0 : 1;
     return;
   }
   const arms = f.arms.split(',');
