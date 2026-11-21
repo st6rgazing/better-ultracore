@@ -197,4 +197,16 @@ function jaccard(a, b) {
   return both / (x.size + y.size - both);
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard };
+// Most keywords of any single rule found in the text (whole words, simple plural folded).
+function keywordHits(text, rules) {
+  const t = tokens(text);
+  const has = (k) => t.has(k) || t.has(`${k}s`) || (k.endsWith('s') && t.has(k.slice(0, -1)));
+  let best = { rule: null, hits: 0 };
+  for (const r of rules) {
+    const hits = ((r.when && r.when.keywords) || []).filter((k) => has(String(k).toLowerCase())).length;
+    if (hits > best.hits) best = { rule: r.id, hits };
+  }
+  return best;
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits };
