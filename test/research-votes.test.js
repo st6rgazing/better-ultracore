@@ -25,3 +25,16 @@ test('a rule starts at 2 votes, gains one without a correction and loses one wit
   assert.strictEqual(votes.next({ votes: 0 }, true), 0);
   assert.strictEqual(votes.next({ votes: 10 }, false), 10);
 });
+
+test('split drops unpinned rules at zero votes and the lowest-scored beyond 30', () => withHome(() => {
+  const now = Date.parse('2026-11-01T00:00:00Z');
+  const base = { last_seen: '2026-11-01T00:00:00.000Z' };
+  const rules = [rule('zero', { ...base, votes: 0 }), rule('zero-pinned', { ...base, votes: 0, pinned: true }), rule('fine', { ...base, votes: 1 })];
+  const a = votes.split(rules, now);
+  assert.deepStrictEqual([a.keep.map((r) => r.id), a.out.map((r) => r.id)], [['zero-pinned', 'fine'], ['zero']]);
+  const many = Array.from({ length: 33 }, (_, i) => rule(`r${String(i).padStart(2, '0')}`, { ...base, count: i + 1 }));
+  many[0].pinned = true;
+  const b = votes.split(many, now);
+  assert.strictEqual(b.keep.length, 30);
+  assert.deepStrictEqual(b.out.map((r) => r.id), ['r01', 'r02', 'r03'], 'the lowest counts go, the pinned one stays');
+}));
