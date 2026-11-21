@@ -285,3 +285,16 @@ test('importRules fills bare source hashes from the inbox', () => {
   assert.strictEqual(r.origin, 'learn');
   assert.ok(!JSON.stringify(r).includes('header'));
 });
+
+test('bumpSessions appends bump sources once per session', () => {
+  fresh();
+  store.importRules([{ ...RULE, sources: [src('A', 0)] }]);
+  store.bumpSessions({ 'only-named': ['B', src('C', 5, 'cccccccccccc'), 'B'] }, T0 + 9 * DAY);
+  store.bumpSessions({ 'only-named': ['B'] }, T0 + 10 * DAY);
+  const [r] = store.loadRules();
+  assert.deepStrictEqual([r.count, r.bumped_sessions, r.last_seen], [3, ['B', 'C'], new Date(T0 + 9 * DAY).toISOString()]);
+  assert.deepStrictEqual(r.sources.slice(1), [
+    { session: 'B', repo: '', ts: new Date(T0 + 9 * DAY).toISOString(), h: '', origin: 'bump' },
+    { session: 'C', repo: 'r1', ts: new Date(T0 + 5 * DAY).toISOString(), h: 'cccccccccccc', origin: 'bump' },
+  ]);
+});
