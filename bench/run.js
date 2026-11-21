@@ -190,12 +190,14 @@ function liveRun(c, arm, rep, o) {
   try {
     const s = sh(path.join(caseDir(c), 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
-    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome);
+    const exclude = excludedIds(o.excludeFrom, c);
+    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome, exclude);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
     const env = { ...process.env };
     if (ARMS[arm].bucHome) {
       env.BUC_HOME = path.join(parent, 'buc-home');
       if (o.bucHome) fs.cpSync(o.bucHome, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
+      dropRules(path.join(env.BUC_HOME, 'rules.json'), exclude);
     }
     const prompt = read(c, 'prompt.txt');
     const base = (spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim();
@@ -255,6 +257,7 @@ function liveRun(c, arm, rep, o) {
       interventions,
       result_excerpt: typeof last.result === "string" ? last.result.slice(0, 600) : null,
       rounds,
+      excluded_rules: exclude,
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
@@ -305,7 +308,7 @@ function main(argv) {
   }
   const arms = f.arms.split(',');
   for (const a of arms) if (!ARMS[a]) throw new Error(`unknown arm: ${a}`);
-  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']) };
+  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']), excludeFrom: f['exclude-rules-from'] || '' };
   const rows = [];
   for (const c of cases) for (const arm of arms) for (let rep = 1; rep <= parseInt(f.n, 10); rep++) {
     console.error(`run ${c} ${arm} #${rep}`);
