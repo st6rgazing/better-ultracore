@@ -356,3 +356,20 @@ test('manifest holds only ids and hashes and detects any change', () => {
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('select: criteria, chain and seeded sample end to end, with every reject logged', () => {
+  const fx = fixture();
+  try {
+    const cands = mc.mine(fx.root);
+    const labels = { '11111111-000': { label: 'correction' }, '11111111-002': { label: 'new-request' } };
+    // the fixture lives under the system temp dir, which the criteria refuse unless told otherwise
+    assert.ok(mc.select(cands, { labels, rules: RULES }, { seed: 10 }).rejects.every((x) => x.why === 'temp or bench dir'));
+    const r = mc.select(cands, { labels, rules: RULES, visible: [], used: [], skipRepos: [], allowTemp: true }, { seed: 10 });
+    assert.deepStrictEqual(r.picked.map((c) => c.id), ['11111111-000']);
+    assert.strictEqual(r.picked[0].kind, 'wide');
+    assert.strictEqual(r.picked[0].ui, false);
+    assert.strictEqual(r.eligible, 1);
+    assert.ok(r.rejects.some((x) => x.id === '11111111-002' && x.as === 'correction'));
+    assert.ok(r.rejects.filter((x) => x.as === 'control').length === 2);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

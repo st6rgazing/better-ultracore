@@ -432,4 +432,25 @@ function context(cands, f) {
   return { rules, labels, visible, used: f.existing ? usedTurns(cands, f.existing) : [], skipRepos: f['skip-repos'] ? String(f['skip-repos']).split(',') : [], allowTemp: !!f['allow-temp'] };
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, DEFAULT_QUOTAS };
+// Steps 2 and 3 for both kinds; returns the picks and every reject with its reason.
+function select(cands, ctx, { seed = 10, controls = 3, skip = [], quotas } = {}) {
+  const rejects = [];
+  const tag = (c) => ({ ...c, kind: kindOf(c.c.text), ui: isUi(c.fix_files) });
+  const ok = [];
+  const merged = chain(cands, ctx.labels || {});
+  for (const [id, into] of merged.absorbed) rejects.push({ id, as: 'correction', why: `later correction in the chain of ${into}` });
+  for (const c of merged.cands) {
+    const why = rejectCorrection(c, ctx) || (c.later || []).map((text) => leaks({ ...c, c: { ...c.c, text, visible: minerVisible(text) } }, ctx.rules || [], ctx.visible || [])).find(Boolean) || null;
+    if (why) rejects.push({ id: c.id, as: 'correction', why }); else ok.push(tag(c));
+  }
+  const picked = sample(ok, { seed, skip, quotas });
+  const okCtl = [];
+  for (const c of cands) {
+    const why = rejectControl(c, ctx);
+    if (why) rejects.push({ id: c.id, as: 'control', why }); else okCtl.push({ ...c, control: true, kind: null, ui: isUi(c.done_files), c: { ...c.c, visible: false } });
+  }
+  const ctl = sample(okCtl, { seed, skip, avoid: picked, quotas: { total: controls, perRepo: controls, minRepos: 2, nonUi: 0, wide: 0, narrow: 0, show: 0 } });
+  return { picked, controls: ctl, eligible: ok.length, eligibleControls: okCtl.length, rejects };
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
