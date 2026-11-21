@@ -76,3 +76,57 @@ test('stats CLI prints one JSON line', () => {
     assert.strictEqual(o.metric, 'interventions');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// ---- held-out set: bench/mine-cases.js ----
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const mc = require('../bench/mine-cases');
+
+const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `v10-${name}-`));
+const SID = '11111111-2222-3333-4444-555555555555';
+const T = (min) => `2026-01-05T10:${String(min).padStart(2, '0')}:00.000Z`;
+const user = (min, text, cwd, extra = {}) => ({ type: 'user', sessionId: SID, timestamp: T(min), cwd, gitBranch: 'main', message: { role: 'user', content: text }, ...extra });
+const tool = (min, name, input) => ({ type: 'assistant', sessionId: SID, timestamp: T(min), message: { role: 'assistant', content: [{ type: 'tool_use', name, input }] } });
+
+// A repo with three dated commits (minutes 0, 12 and 22) and a transcript whose request, correction and next request sit around them.
+function fixture() {
+  const dir = tmp('mine');
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  const g = (args, min) => {
+    const env = { ...process.env, GIT_AUTHOR_DATE: T(min || 0), GIT_COMMITTER_DATE: T(min || 0), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' };
+    const p = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', env });
+    if (p.status !== 0) throw new Error(p.stderr);
+    return p.stdout.trim();
+  };
+  g(['init', '-q', '-b', 'main']);
+  const commit = (min, body) => { fs.writeFileSync(path.join(repo, 'fee.txt'), body); g(['add', '-A']); g(['commit', '-q', '-m', `m${min}`], min); return g(['rev-parse', 'HEAD']); };
+  const sha = { base: commit(0, 'old\n'), wrong: commit(12, 'wrong\n'), fix: commit(22, 'right\n') };
+  const proj = path.join(dir, 'projects', '-Users-x-app');
+  fs.mkdirSync(proj, { recursive: true });
+  const real = fs.realpathSync(repo);
+  const lines = [
+    user(10, 'make the late fee five dollars instead of two', real),
+    tool(11, 'Edit', { file_path: 'fee.txt' }),
+    { type: 'user', sessionId: SID, timestamp: T(11), cwd: real, message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] } },
+    user(13, 'Deploy to live', real),
+    user(20, 'not the monthly plan, the yearly plan fee', real),
+    tool(21, 'Bash', { command: 'git commit -q -m fix' }),
+    user(30, 'add a dark mode toggle to the header please', real),
+    user(31, '<task-notification>ignored</task-notification>', real),
+    user(32, 'side', real, { isSidechain: true }),
+  ];
+  const file = path.join(proj, `${SID}.jsonl`);
+  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n'));
+  fs.mkdirSync(path.join(dir, 'projects', '-private-tmp-x'));
+  fs.writeFileSync(path.join(dir, 'projects', '-private-tmp-x', 'a.jsonl'), '');
+  return { dir, repo: real, file, sha, root: path.join(dir, 'projects') };
+}
+
+test('relayed keeps only human trigger messages and unescapes them', () => {
+  const text = '<wake><message trigger="true" from="human" id="1">it&#39;s &lt;b&gt; broken</message><message trigger="false" from="human">old</message><message trigger="true" from="agent">bot</message></wake>';
+  assert.deepStrictEqual(mc.relayed(text), ["it's <b> broken"]);
+});
+
