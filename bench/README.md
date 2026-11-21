@@ -70,6 +70,14 @@ Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (a
 - `rounds`: audit trail, one entry per agent call: `round`, `prompt` (what the user side sent, 400 chars), `reply_excerpt` (first 600 chars), `reply_tail` (last 300 of a longer reply), `accept_pass` (null when accept was not run after that call), `files_changed`, `lines_changed`, `patch` (cumulative since setup, 20000 chars), `exit`, `timed_out`, `total_cost_usd`.
 - `excluded_rules`: rule ids left out by `--exclude-rules-from`.
 
+## Statistics
+
+`bench/stats.js` compares two arms on one metric with a case-clustered paired bootstrap. The unit is the case: each case contributes one difference (mean of arm A minus mean of arm B over its reps), cases are resampled with replacement, runs are not. More reps of the same cases do not narrow the interval; more cases do.
+
+    node bench/stats.js bench/results/my-label.json --a buc --b plain --metric interventions --B 10000 --seed 10
+
+Prints one JSON line: `diff` (mean difference over cases), `lo` and `hi` (90% percentile interval), `cases`, `B`, `seed`. The primary metric is `interventions` per run; any numeric or boolean row field works (`first_try_pass`, `tokens_to_accept`). `pairedBootstrap(rows, armA, armB, metric, {B, seed, level})` is the same thing as a function.
+
 ## Caveats
 
 - Small N: use `--n 3` or more before drawing conclusions; one run per cell is anecdote.
