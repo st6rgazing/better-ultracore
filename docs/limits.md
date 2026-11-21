@@ -9,7 +9,7 @@
 | Stop-hook revision | 1 | Enforced. The hook never blocks and never adds feedback when `stop_hook_active` is true; remaining failures are shown to the user. A block and a soft note both use up the one continuation. |
 | deterministic rule checks | per rule | Enforced by the Stop hook for the built-in check ids only. |
 | built-in hard checks | on | Enforced: the Stop hook blocks once. `undo-restored`, `handsoff-no-edits`, `sweep-residue`, `no-test-weakening`, `conflict-or-debugger`. They run on every turn that has a baseline in the turn file, with no rule needed. |
-| built-in soft checks | on | Advisory: returned as Stop `additionalContext`, never a `decision`. `ended-with-question`, `wide-diff`. |
+| built-in soft checks | on | Advisory: returned as Stop `additionalContext`, never a `decision`. `ended-with-question`, `wide-diff`, `sweep-scope`. |
 | typecheck | on when the repo has the script | Blocks only when the output names a file changed this turn. A failure elsewhere passes with a note. |
 | switching a check off | n/a | Each check id is a `BUC_OFF` name (comma list), also `"off"` in `.claude/buc.json`. `shot` turns off the Stop screenshot, `budget` the tool-call notice. |
 | tool-call budget | 20 or 45 | Advisory. `hooks/track.js` on `PostToolBatch` counts tool calls per turn and says so once at the budget and once at twice it: 20 on a turn with a fixed reading or a correction, 45 otherwise. `"toolBudget"` in `.claude/buc.json`: a number, `{small, large}` or `false`. Subagent calls are not counted. Nothing is stopped. |
@@ -37,6 +37,7 @@
 | `edit-unrun` | soft | A bug-fix edit prompt (not about wording or looks), an edit in the tool log and no executing command after it, and the reply does not already say it is unverified. Not reported when `unbacked-claim` failed. |
 | `ended-with-question` | soft | An edit prompt of at most 25 words with no destructive word, nothing changed, and the reply ends in `?`. |
 | `wide-diff` | soft | The intent is `EXACT` or `LITERAL` and the turn changed over 5 files or 150 lines, tests and lock files aside. |
+| `sweep-scope` | soft | An edit prompt with whole-scope words (`whole app`, `everywhere`, `all traces`, `every page` and the like, pasted blocks aside) changed 1 or 2 files, tests and lock files aside, or the end of the reply offers left-out work back (`say if you want`, `do you want me to`). A turn that changed nothing passes. |
 
 The tool log (`lib/turnlog.js`) holds call numbers and outcomes only: `lastEditAt`, `lastRunAt`, `lastTestAt`, `lastTestOk`. It sees `Edit`, `Write`, `MultiEdit`, `NotebookEdit` and `Bash`; an edit made through a shell command is not logged, so the two evidence checks stay silent on it. A failed run is read from an error flag, a non-zero exit code or a failing test summary in the response.
 
@@ -50,6 +51,7 @@ Known gaps: a file that was already dirty when the turn began and was edited aga
 - Engine: the repo's Playwright, else an installed Chrome with `--headless=new --screenshot`. `--click` and `--audit` need Playwright; with Chrome they are reported as ignored.
 - `--audit` prints at most 5 findings: horizontal overflow of the page, text clipped by its own box, overlapping interactive boxes. `--classes` limits element findings to those classes.
 - Stop fallback: when a turn changed `css, scss, tsx, jsx, vue, svelte, html` files and ran no `buc-shot`, the Stop hook takes one of `/` with the audit limited to the classes in the turn's added lines, and returns the PNG path as `additionalContext`. A skipped screenshot says nothing.
+- The fallback needs evidence that `/` shows the change: the added lines must name at least one class, and the captured page must have one of them (Playwright waits up to 3 s for a visible element; Chrome looks in a `--dump-dom`). Otherwise the hook takes or keeps no image and says nothing, so a change on another route, behind a click, or with no visual part gets no fallback look.
 - Limits: a root screenshot shows nothing about a deep state unless `--click` reaches it. Chrome captures at page load, so a slow client render can come out blank. Clipped text behind `text-overflow: ellipsis` is treated as intended.
 
 ## When agents run

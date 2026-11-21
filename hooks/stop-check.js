@@ -25,6 +25,9 @@ function remember(sessionId) {
 
 // The fallback screenshot: UI files changed this turn, no buc-shot was run, and the repo has a dev server to start.
 // Returns the feedback line, or '' when there is nothing to show (also when the screenshot was skipped). BUC_OFF name: shot.
+// A screenshot is handed over only with evidence that it shows the change: the turn's added lines name classes, and the
+// captured page has at least one of them. A page without them (another route, a loader, a blank frame) says nothing
+// about the change and would cost a turn, so the hook stays quiet and removes the image.
 // The line is already redacted where it quotes the page; the PNG path must stay as it is.
 function fallbackShot(sessionId) {
   try {
@@ -34,11 +37,18 @@ function fallbackShot(sessionId) {
     if (store.off('shot', root)) return '';
     const ui = changedFiles(root, turn).filter((f) => isUiFile(f) && fs.existsSync(path.join(root, f)));
     if (!ui.length || resolveServer(root, 0).skip) return '';
-    const r = shotSync({ root, path: '/', audit: true, classes: classesIn(addedLines(root, turn, ui)), timeoutMs: SHOT_MS });
+    const classes = classesIn(addedLines(root, turn, ui));
+    if (!classes.length) return '';
+    const r = shotSync({ root, path: '/', audit: true, classes, timeoutMs: SHOT_MS });
     if (r.status !== 'ok') return '';
+    if (!Array.isArray(r.seen) || !r.seen.length) {
+      fs.rmSync(r.png, { force: true });
+      return '';
+    }
     store.patchTurn(sessionId, { shotAt: store.now() });
     const audit = r.findings.length ? redact(` Layout audit: ${r.findings.join('; ')}.`) : '';
-    return `You changed UI files and took no screenshot. Here is ${r.url} after your change: ${r.png} . Read it once, check it shows what was asked and fix what does not.${audit}`;
+    const shows = r.seen.slice(0, 3).map((c) => `.${c}`).join(', ');
+    return `You changed UI files and took no screenshot. Here is ${r.url} after your change, showing ${shows}: ${r.png} . Read it once, check it shows what was asked and fix what does not.${audit}`;
   } catch {
     return '';
   }

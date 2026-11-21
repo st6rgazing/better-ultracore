@@ -128,18 +128,19 @@ test('capturePlaywright clicks, saves a PNG and audits the lying-UI fixture', { 
   try {
     assert.ok(await shot.waitFor(url, 10000));
     const mod = require(playwrightDir());
-    const all = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'all.png'), audit: true, clicks: ['text=Details'] });
+    const capture = async (opts) => (await shot.capturePlaywright(mod, opts)).findings;
+    const all = await capture({ url, out: path.join(dir, 'all.png'), audit: true, clicks: ['text=Details'] });
     assert.ok(fs.statSync(path.join(dir, 'all.png')).size > 5000);
     assert.ok(all.length <= 5);
     assert.match(all[0], /^horizontal overflow: the page is \d+px wide in a 1280px viewport; div\.banner/);
     assert.ok(all.some((f) => /^clipped text: div\.price-tag "Subscribe/.test(f)), all.join('\n'));
     assert.ok(all.some((f) => /^overlap: button\.save "Save" and button\.cancel "Cancel" share \d+x40px/.test(f)), all.join('\n'));
-    const limited = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'l.png'), audit: true, classes: ['price-tag'] });
+    const limited = await capture({ url, out: path.join(dir, 'l.png'), audit: true, classes: ['price-tag'] });
     assert.ok(limited.some((f) => f.startsWith('clipped text:')));
     assert.ok(!limited.some((f) => f.startsWith('overlap:')), 'findings outside the given classes are dropped');
-    const none = await shot.capturePlaywright(mod, { url, out: path.join(dir, 'n.png'), audit: true, classes: [] });
+    const none = await capture({ url, out: path.join(dir, 'n.png'), audit: true, classes: [] });
     assert.deepStrictEqual(none.map((f) => f.split(':')[0]), ['horizontal overflow']);
-    assert.deepStrictEqual(await shot.capturePlaywright(mod, { url, out: path.join(dir, 'p.png') }), []);
+    assert.deepStrictEqual(await shot.capturePlaywright(mod, { url, out: path.join(dir, 'p.png') }), { findings: [], seen: null });
   } finally {
     await shot.stopServer(child);
   }

@@ -248,14 +248,14 @@ test('wide-diff fires on a literal turn over 5 files or 150 lines, and not on ot
 test('checkSession runs every built-in check on a turn with a baseline, marks soft ones, and each has a BUC_OFF name', () => {
   const dir = repo();
   const home = tmp('buc-home-');
-  const ids = ['undo-restored', 'handsoff-no-edits', 'sweep-residue', 'no-test-weakening', 'conflict-or-debugger', 'ended-with-question', 'wide-diff'];
+  const ids = ['undo-restored', 'handsoff-no-edits', 'sweep-residue', 'no-test-weakening', 'conflict-or-debugger', 'ended-with-question', 'wide-diff', 'sweep-scope'];
   assert.deepStrictEqual(Object.keys(check.BUILTIN), ids);
   withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => {
     store.writeTurn('s', turn(dir, 'make the header blue'));
     write(dir, 'app.js', 'function f() {\n  debugger;\n}\n');
     const res = check.checkSession('s', {});
     assert.deepStrictEqual(res.map((r) => r.id), ids);
-    assert.deepStrictEqual(res.filter((r) => r.soft).map((r) => r.id), ['ended-with-question', 'wide-diff']);
+    assert.deepStrictEqual(res.filter((r) => r.soft).map((r) => r.id), ['ended-with-question', 'wide-diff', 'sweep-scope']);
     assert.deepStrictEqual(res.filter((r) => !r.pass).map((r) => r.id), ['conflict-or-debugger']);
     const { porcelain, ...noBase } = turn(dir, 'x');
     store.writeTurn('nobase', noBase);
@@ -434,7 +434,8 @@ function uiRepo(conf = { ui: { dev: 'node server.js' } }) {
   const fx = path.join(__dirname, 'fixtures', 'ui-app');
   const dir = repo({ 'server.js': fs.readFileSync(path.join(fx, 'server.js'), 'utf8'), 'index.html': fs.readFileSync(path.join(fx, 'index.html'), 'utf8'), 'app.js': 'a\n', '.claude/buc.json': JSON.stringify(conf) });
   const bin = path.join(tmp('buc-bin-'), 'fake-chrome');
-  fs.writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "${a#--screenshot=}";; esac; done\n', { mode: 0o755 });
+  // For --dump-dom it prints the page the tests write, so the changed classes count as shown.
+  fs.writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "${a#--screenshot=}";; --dump-dom) echo \'<div class="card wide">hi</div>\';; esac; done\n', { mode: 0o755 });
   return { dir, env: { BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: bin, BUC_PLAYWRIGHT: '' } };
 }
 
@@ -446,7 +447,7 @@ test('Stop fallback: UI files changed and no shot gives the PNG path as addition
   const out = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home, env);
   assert.strictEqual(out.decision, undefined);
   const text = out.hookSpecificOutput.additionalContext;
-  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change: (\S+\.png) \. Read it once/);
+  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change, showing \.card, \.wide: (\S+\.png) \. Read it once/);
   const png = text.match(/: (\S+\.png) /)[1];
   assert.strictEqual(fs.readFileSync(png, 'utf8'), 'PNGDATA');
   fs.rmSync(png);
