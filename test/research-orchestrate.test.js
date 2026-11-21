@@ -54,7 +54,7 @@ test('the prompt hook adds the orchestration line inside the caps and keeps the 
   const path = require('node:path');
   const store = require('../lib/rules/store');
   const inject = require('../hooks/inject');
-  const { SELF } = require('../lib/intent');
+  const { SELF_SHORT } = require('../lib/intent');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-orch-'));
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-orch-cwd-'));
   withEnv({ BUC_HOME: home, BUC_OFF: '', BUC_NOW: '1700000000000' }, () => {
@@ -64,7 +64,7 @@ test('the prompt hook adds the orchestration line inside the caps and keeps the 
     };
     const solo = ctx('ultracode fix the typo in the footer');
     assert.ok(solo.endsWith(orch.SOLO), solo);
-    assert.ok(solo.includes(SELF), 'the long self line still fits');
+    assert.ok(solo.includes(SELF_SHORT), 'the self line still fits');
     assert.ok(solo.length <= 500);
     assert.ok(ctx('explain what the ultracode keyword does').includes(orch.NOT_OPTIN));
     assert.ok(!ctx('fix the typo in the footer').includes('agents'));
