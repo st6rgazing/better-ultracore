@@ -231,3 +231,22 @@ test('store.hash is 12 hex of the redacted text and stable under redaction', () 
   const secret = 'no, the key is sk-ant-REDACTED';
   assert.strictEqual(store.hash(secret), store.hash(redact(secret)));
 });
+
+const RULE = { id: 'only-named', rule: 'Change only the named thing.', when: { keywords: ['only'] } };
+const src = (session, day, h = 'aaaaaaaaaaaa', extra = {}) => ({ session, repo: 'r1', ts: new Date(T0 + day * DAY).toISOString(), h, ...extra });
+
+test('normalize keeps origin, sources and scope, and never keeps text in sources', () => {
+  const { rule } = store.normalize({ ...RULE, sources: [src('A', 0), src('A', 0), { session: 'B', repo: 'r2', ts: T0, h: 'zz', text: 'no, only the header' }, 'bbbbbbbbbbbb', {}, 7], scope: { repos: ['r1', 'r1', ''] } });
+  assert.strictEqual(rule.origin, 'learn');
+  assert.deepStrictEqual(rule.sources, [
+    { session: 'A', repo: 'r1', ts: '2026-06-01T00:00:00.000Z', h: 'aaaaaaaaaaaa' },
+    { session: 'B', repo: 'r2', ts: '2026-06-01T00:00:00.000Z', h: '' },
+    { session: '', repo: '', ts: '', h: 'bbbbbbbbbbbb' },
+  ]);
+  assert.deepStrictEqual(rule.scope, { repos: ['r1'] });
+  const plain = store.normalize(RULE).rule;
+  assert.deepStrictEqual([plain.origin, plain.sources, plain.scope], ['import', undefined, undefined]);
+  assert.strictEqual(store.normalize({ ...RULE, origin: 'habit' }).rule.origin, 'habit');
+  assert.strictEqual(store.normalize({ ...RULE, origin: 'nonsense' }).rule.origin, 'import');
+  assert.strictEqual(store.normalize({ ...RULE, sources: [src('A', 0, 'aaaaaaaaaaaa', { origin: 'bump' })] }).rule.origin, 'import');
+});
