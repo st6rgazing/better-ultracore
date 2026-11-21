@@ -373,3 +373,27 @@ test('select: criteria, chain and seeded sample end to end, with every reject lo
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('mine-cases CLI: mine, select, write, verify and manifest run end to end', () => {
+  const fx = fixture();
+  try {
+    const cli = (...a) => spawnSync('node', [path.join(__dirname, '..', 'bench', 'mine-cases.js'), ...a], { encoding: 'utf8' });
+    const out = path.join(fx.dir, 'held');
+    const cands = path.join(out, 'candidates.jsonl');
+    assert.strictEqual(cli('mine', '--root', fx.root, '--out', cands).status, 0);
+    fs.writeFileSync(path.join(out, 'labels.json'), JSON.stringify({ '11111111-000': { label: 'correction' }, '11111111-002': { label: 'new-request' } }));
+    const sel = cli('select', '--candidates', cands, '--labels', path.join(out, 'labels.json'), '--seed', '10', '--allow-temp', '--out', path.join(out, 'selection.json'));
+    assert.strictEqual(sel.status, 0, sel.stderr);
+    assert.deepStrictEqual(JSON.parse(sel.stdout).picked, ['11111111-000']);
+    assert.strictEqual(cli('write', '--selection', path.join(out, 'selection.json'), '--out', out).status, 0);
+    fs.writeFileSync(path.join(out, 'ho-01', 'accept.sh'), '#!/bin/sh\ngrep -qx right "$1/fee.txt"\n', { mode: 0o755 });
+    const v = cli('verify', '--dir', out);
+    assert.strictEqual(v.status, 0, v.stdout + v.stderr);
+    assert.match(v.stdout, /ho-01: base fails=true wrong fails=true fix passes=true/);
+    const mf = path.join(fx.dir, 'manifest.json');
+    assert.strictEqual(cli('manifest', '--dir', out, '--out', mf).status, 0);
+    assert.strictEqual(cli('manifest', '--dir', out, '--check', mf).status, 0);
+    fs.appendFileSync(path.join(out, 'ho-01', 'prompt.txt'), 'x');
+    assert.strictEqual(cli('manifest', '--dir', out, '--check', mf).status, 1);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

@@ -453,4 +453,42 @@ function select(cands, ctx, { seed = 10, controls = 3, skip = [], quotas } = {})
   return { picked, controls: ctl, eligible: ok.length, eligibleControls: okCtl.length, rejects };
 }
 
+function main(argv) {
+  const f = parseArgs(argv);
+  const cmd = f._[0] || 'mine';
+  if (cmd === 'mine') {
+    const root = f.root || path.join(os.homedir(), '.claude', 'projects');
+    const cands = mine(root, { skip: f.skip ? String(f.skip).split(',') : [] });
+    fs.mkdirSync(path.dirname(path.resolve(f.out)), { recursive: true });
+    fs.writeFileSync(f.out, cands.map((c) => JSON.stringify(c)).join('\n') + (cands.length ? '\n' : ''));
+    console.log(`${cands.length} candidates -> ${f.out}`);
+  } else if (cmd === 'select') {
+    const cands = readJsonl(f.candidates);
+    const r = select(cands, context(cands, f), { seed: parseInt(f.seed || '10', 10), controls: parseInt(f.controls || '3', 10), skip: f['skip-ids'] ? String(f['skip-ids']).split(',') : [] });
+    console.log(JSON.stringify({ eligible: r.eligible, eligibleControls: r.eligibleControls, picked: r.picked.map((c) => c.id), controls: r.controls.map((c) => c.id) }));
+    if (f.out) fs.writeFileSync(f.out, `${JSON.stringify(r, null, 2)}\n`);
+  } else if (cmd === 'write') {
+    const sel = JSON.parse(fs.readFileSync(f.selection, 'utf8'));
+    const name = (prefix, i) => `${prefix}-${String(i + 1).padStart(2, '0')}`;
+    sel.picked.forEach((c, i) => writeCase(path.join(f.out, name('ho', i)), c, { deps: f.deps }));
+    sel.controls.forEach((c, i) => writeCase(path.join(f.out, name('ho-ctl', i)), c, { deps: f.deps }));
+    console.log(`${sel.picked.length} correction cases and ${sel.controls.length} controls -> ${f.out}`);
+  } else if (cmd === 'verify') {
+    const root = f.dir;
+    const names = f.cases ? String(f.cases).split(',') : fs.readdirSync(root).filter((c) => fs.existsSync(path.join(root, c, 'accept.sh'))).sort();
+    const res = names.map((c) => verifyCase(path.join(root, c)));
+    for (const r of res) console.log(`${r.case}: base fails=${r.base_fails} wrong fails=${r.wrong_fails === null ? 'n/a' : r.wrong_fails} fix passes=${r.fix_passes}${r.error ? ` error=${r.error}` : ''}`);
+    process.exitCode = res.every((r) => r.ok) ? 0 : 1;
+  } else if (cmd === 'manifest') {
+    if (f.check) {
+      const bad = checkManifest(f.dir, JSON.parse(fs.readFileSync(f.check, 'utf8')));
+      console.log(bad.length ? `changed: ${bad.join(', ')}` : 'manifest matches');
+      process.exitCode = bad.length ? 1 : 0;
+    } else {
+      fs.writeFileSync(f.out, `${JSON.stringify(manifest(f.dir), null, 2)}\n`);
+    }
+  } else throw new Error(`unknown command: ${cmd}`);
+}
+
 module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+if (require.main === module) main(process.argv.slice(2));
