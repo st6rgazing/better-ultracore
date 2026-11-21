@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// 4-arm benchmark harness. See bench/README.md.
+// Benchmark harness: plain, plain-claudemd, buc, buc-regex and ultra arms. See bench/README.md.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -9,7 +9,9 @@ const { simulate } = require('./sim-user');
 
 const ROOT = path.join(__dirname, '..');
 const CASES_DIR = path.join(__dirname, 'cases');
-const PRIVATE_DIR = path.join(__dirname, 'private');
+const PRIVATE_DIR = process.env.BUC_BENCH_PRIVATE || path.join(__dirname, 'private');
+// Held-out real-task cases (gitignored). BUC_BENCH_HELDOUT points at another checkout's copy, e.g. from a worktree.
+const HELDOUT_DIR = process.env.BUC_BENCH_HELDOUT || path.join(__dirname, 'heldout');
 const RULES = path.join(__dirname, 'fixtures', 'rules.json');
 const ALLOWED_TOOLS = 'Bash(node:*),Bash(npm:*),Bash(git:*),Agent,Workflow,Read,Edit,Write,Grep,Glob';
 
@@ -18,6 +20,8 @@ const ARMS = {
   plain: { noPlugin: true, budgetMult: 1, extra: [] },
   'plain-claudemd': { noPlugin: true, budgetMult: 1, claudeMd: true, extra: [] },
   buc: { noPlugin: false, budgetMult: 1, bucHome: true, extra: [] },
+  // Ablation: the plugin with the v9 fixed intent lines instead of self-classification (BUC_OFF=self).
+  'buc-regex': { noPlugin: false, budgetMult: 1, bucHome: true, off: ['self'], extra: [] },
   ultra: { noPlugin: true, budgetMult: 2, extra: ['--settings', '{"ultracode":true,"workflowSizeGuideline":"small"}', '--effort', 'xhigh'] },
 };
 
@@ -32,12 +36,18 @@ function parseArgs(argv) {
 
 const sh = (script, dir) => spawnSync('sh', [script, dir], { encoding: 'utf8' });
 
-// Case names from bench/cases and (when present) bench/private; public wins on a name clash.
-function listCases() {
+// Case names from bench/cases and (when present) bench/private and bench/heldout; public wins on a name clash.
+// A held-out dir is a case only with a case.json next to its setup.sh, so working files there are not picked up.
+function listCases(roots = [HELDOUT_DIR, PRIVATE_DIR, CASES_DIR]) {
   const out = new Map();
-  for (const root of [PRIVATE_DIR, CASES_DIR]) {
+  for (const root of roots) {
     if (!fs.existsSync(root)) continue;
-    for (const c of fs.readdirSync(root)) if (fs.existsSync(path.join(root, c, 'setup.sh'))) out.set(c, path.join(root, c));
+    for (const c of fs.readdirSync(root)) {
+      const dir = path.join(root, c);
+      if (!fs.existsSync(path.join(dir, 'setup.sh'))) continue;
+      if (root === HELDOUT_DIR && !fs.existsSync(path.join(dir, 'case.json'))) continue;
+      out.set(c, dir);
+    }
   }
   return out;
 }
@@ -160,6 +170,9 @@ function roundEntry(round, prompt, run, pass, diff) {
     lines_changed: diff.stat.reduce((n, x) => n + x.added + x.deleted, 0),
     patch: diff.patch,
     exit: run.exit ?? null, timed_out: !!run.timed_out, total_cost_usd: run.total_cost_usd ?? null,
+    // This call alone, not cumulative: what one round cost in tokens, agent turns and wall time.
+    tokens: run.model_usage || run.usage ? (({ input, output }) => input + output)(sumTokens(run.model_usage, run.usage)) : null,
+    num_turns: run.num_turns ?? null, elapsed_ms: run.elapsed_ms ?? null,
   };
 }
 
@@ -172,11 +185,95 @@ function dropRules(file, ids) {
   return gone;
 }
 
+// case.json of a mined case ({repo, base, wrong, fix, session, ts, control}); null for synthetic and older private cases.
+function caseMeta(c) {
+  return has(c, 'case.json') ? JSON.parse(read(c, 'case.json')) : null;
+}
+
+// Adds backfilled provenance ({rule id: [{session, repo, ts, h}]}, what bench/backfill-sources.js prints) to a rules.json.
+// Existing sources are kept; returns the ids that gained any.
+function mergeSources(rulesFile, sourcesFile) {
+  const rules = JSON.parse(fs.readFileSync(rulesFile, 'utf8'));
+  const extra = JSON.parse(fs.readFileSync(sourcesFile, 'utf8'));
+  const touched = [];
+  for (const r of rules) {
+    const add = Array.isArray(extra[r.id]) ? extra[r.id] : [];
+    if (!add.length) continue;
+    const seen = new Set((r.sources || []).map((s) => `${s.session}|${s.h}`));
+    r.sources = [...(r.sources || []), ...add.filter((s) => !seen.has(`${s.session}|${s.h}`))];
+    touched.push(r.id);
+  }
+  fs.writeFileSync(rulesFile, `${JSON.stringify(rules, null, 2)}\n`);
+  return touched;
+}
+
+// --rules-as-of: the rule store a run may see. 'case' cuts at the case's own request time and leaves out what its
+// session taught (case.json ts and session); an ISO date cuts every case at that date. Built with `buc rules as-of`
+// from bucHome into outDir, which then serves as the BUC_HOME source for the buc arms and the CLAUDE.md control.
+// Returns {home, before, excluded_sessions, kept, dropped}, or null when no cut applies (no spec, or 'case' without case.json).
+function asOfHome(c, spec, bucHome, outDir, sourcesFile) {
+  if (!spec) return null;
+  if (!bucHome) throw new Error('--rules-as-of needs --buc-home <dir>');
+  const meta = caseMeta(c);
+  if (spec === 'case' && !(meta && meta.ts)) return null;
+  const before = spec === 'case' ? meta.ts : spec;
+  const sessions = spec === 'case' && meta.session ? [meta.session] : [];
+  const src = `${outDir}-src`;
+  fs.cpSync(bucHome, src, { recursive: true });
+  if (sourcesFile && fs.existsSync(path.join(src, 'rules.json'))) mergeSources(path.join(src, 'rules.json'), sourcesFile);
+  const args = [path.join(ROOT, 'bin', 'buc'), 'rules', 'as-of', '--before', before, '--out', outDir];
+  if (sessions.length) args.push('--exclude-sessions', sessions.join(','));
+  const p = spawnSync('node', args, { encoding: 'utf8', env: { ...process.env, BUC_HOME: src } });
+  fs.rmSync(src, { recursive: true, force: true });
+  if (p.status !== 0) throw new Error(`rules as-of failed for ${c}: ${p.stderr}`);
+  const info = JSON.parse(p.stdout.trim().split('\n').pop());
+  return { home: outDir, before, excluded_sessions: sessions, kept: info.kept, dropped: info.dropped };
+}
+
+// BUC_OFF for an arm: the arm's switches added to whatever the caller already set.
+function armOff(arm, current = '') {
+  return [...new Set([...String(current).split(','), ...(ARMS[arm].off || [])].map((x) => x.trim()).filter(Boolean))].join(',');
+}
+
+// Directory of a Playwright package installed in root or one of its direct subfolders (client/, web/), or null.
+function playwrightIn(root) {
+  if (!root || !fs.existsSync(root)) return null;
+  const subs = fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => path.join(root, e.name));
+  for (const dir of [root, ...subs]) {
+    for (const name of ['playwright', '@playwright/test', 'playwright-core']) {
+      const pkg = path.join(dir, 'node_modules', name, 'package.json');
+      if (fs.existsSync(pkg)) return path.dirname(pkg);
+    }
+  }
+  return null;
+}
+
+// Env that lets the plugin's screenshot and layout checks find a browser inside a run clone. A Playwright at the
+// clone's root wins (lib/shot.js resolves it from there). Otherwise BUC_PLAYWRIGHT names one from a subfolder of
+// the clone, the case's source repo or this repo's fixture. PLAYWRIGHT_BROWSERS_PATH names the user's browser
+// cache when it exists, so the clone launches the Chromium the source repo already downloaded.
+// Values the caller set are kept. Returns only the entries to add; empty when no browser is available.
+function browserEnv(dir, meta, env = process.env, home = os.homedir()) {
+  const out = {};
+  const atRoot = ['playwright', '@playwright/test', 'playwright-core'].some((n) => fs.existsSync(path.join(dir, 'node_modules', n, 'package.json')));
+  if (!env.BUC_PLAYWRIGHT && !atRoot) {
+    const found = [dir, meta && meta.repo, path.join(ROOT, 'fixtures', 'vite-express'), ROOT].map(playwrightIn).find(Boolean);
+    if (found) out.BUC_PLAYWRIGHT = found;
+  }
+  if (!env.PLAYWRIGHT_BROWSERS_PATH) {
+    const cache = [path.join(home, 'Library', 'Caches', 'ms-playwright'), path.join(home, '.cache', 'ms-playwright')].find((p) => fs.existsSync(p));
+    if (cache) out.PLAYWRIGHT_BROWSERS_PATH = cache;
+  }
+  return out;
+}
+
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
 function writeClaudeMd(dir, bucHome, exclude = []) {
   const src = bucHome && fs.existsSync(path.join(bucHome, 'rules.json')) ? path.join(bucHome, 'rules.json') : RULES;
   const rules = JSON.parse(fs.readFileSync(src, 'utf8')).filter((r) => !exclude.includes(r.id));
+  // An as-of cut can leave nothing; an empty heading would only be noise.
+  if (!rules.length) return;
   const file = path.join(dir, 'CLAUDE.md');
   const tracked = spawnSync('git', ['-C', dir, 'ls-files', '--error-unmatch', 'CLAUDE.md']).status === 0;
   fs.appendFileSync(file, `\n# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
@@ -191,14 +288,20 @@ function liveRun(c, arm, rep, o) {
     const s = sh(path.join(caseDir(c), 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
     const exclude = excludedIds(o.excludeFrom, c);
-    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome, exclude);
+    const meta = caseMeta(c);
+    // With --rules-as-of the buc arms and the CLAUDE.md control both read the cut store, never the full one.
+    const asOf = asOfHome(c, o.rulesAsOf, o.bucHome, path.join(parent, 'asof-home'), o.ruleSources);
+    const home = asOf ? asOf.home : o.bucHome;
+    if (ARMS[arm].claudeMd) writeClaudeMd(dir, home, exclude);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
-    const env = { ...process.env };
+    const browser = browserEnv(dir, meta);
+    const env = { ...process.env, ...browser };
     if (ARMS[arm].bucHome) {
       env.BUC_HOME = path.join(parent, 'buc-home');
-      if (o.bucHome) fs.cpSync(o.bucHome, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
+      if (home) fs.cpSync(home, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
       dropRules(path.join(env.BUC_HOME, 'rules.json'), exclude);
     }
+    if (ARMS[arm].off) env.BUC_OFF = armOff(arm, env.BUC_OFF);
     const prompt = read(c, 'prompt.txt');
     const base = (spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim();
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
@@ -258,6 +361,9 @@ function liveRun(c, arm, rep, o) {
       result_excerpt: typeof last.result === "string" ? last.result.slice(0, 600) : null,
       rounds,
       excluded_rules: exclude,
+      rules_as_of: asOf ? { before: asOf.before, excluded_sessions: asOf.excluded_sessions, kept: asOf.kept, dropped: asOf.dropped } : null,
+      control: meta ? !!meta.control : null,
+      browser: { playwright: browser.BUC_PLAYWRIGHT ? 'borrowed' : playwrightIn(dir) ? 'own' : null },
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
@@ -272,8 +378,17 @@ function dryRun(c) {
     const hasSolve = fs.existsSync(path.join(caseDir(c), 'solve.sh'));
     if (hasSolve) sh(path.join(caseDir(c), 'solve.sh'), dir);
     const solved = hasSolve ? sh(path.join(caseDir(c), 'accept.sh'), dir).status : null;
-    return { case: c, unsolved_fails: unsolved !== 0, solved_passes: hasSolve ? solved === 0 : null };
+    return { case: c, unsolved_fails: unsolved !== 0, solved_passes: hasSolve ? solved === 0 : null, wrong_fails: wrongFails(c, parent) };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+}
+
+// A case with wrong.sh (the state the user corrected) must fail accept there too. Fresh setup; null without wrong.sh.
+function wrongFails(c, parent) {
+  if (!fs.existsSync(path.join(caseDir(c), 'wrong.sh'))) return null;
+  const dir = path.join(parent, 'wrong');
+  sh(path.join(caseDir(c), 'setup.sh'), dir);
+  sh(path.join(caseDir(c), 'wrong.sh'), dir);
+  return sh(path.join(caseDir(c), 'accept.sh'), dir).status !== 0;
 }
 
 const mean = (xs) => { const v = xs.filter((x) => typeof x === 'number'); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
@@ -302,24 +417,27 @@ function main(argv) {
   if (f.dry) {
     console.log(`arms: ${Object.keys(ARMS).join(', ')}`);
     const res = cases.map(dryRun);
-    for (const r of res) console.log(`${r.case}: unsolved fails=${r.unsolved_fails} solved passes=${r.solved_passes === null ? 'n/a (no solve.sh)' : r.solved_passes}`);
-    process.exitCode = res.every((r) => r.unsolved_fails && r.solved_passes !== false) ? 0 : 1;
+    for (const r of res) console.log(`${r.case}: unsolved fails=${r.unsolved_fails} solved passes=${r.solved_passes === null ? 'n/a (no solve.sh)' : r.solved_passes}${r.wrong_fails === null ? '' : ` wrong fails=${r.wrong_fails}`}`);
+    process.exitCode = res.every((r) => r.unsolved_fails && r.solved_passes !== false && r.wrong_fails !== false) ? 0 : 1;
     return;
   }
   const arms = f.arms.split(',');
   for (const a of arms) if (!ARMS[a]) throw new Error(`unknown arm: ${a}`);
-  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']), excludeFrom: f['exclude-rules-from'] || '' };
+  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']), excludeFrom: f['exclude-rules-from'] || '',
+    rulesAsOf: f['rules-as-of'] || '', ruleSources: f['rule-sources'] && path.resolve(f['rule-sources']) };
+  if (o.rulesAsOf && !o.bucHome) throw new Error('--rules-as-of needs --buc-home <dir>');
   const rows = [];
+  const out = f.out || path.join(__dirname, 'results', `${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+  fs.mkdirSync(path.dirname(out), { recursive: true });
   for (const c of cases) for (const arm of arms) for (let rep = 1; rep <= parseInt(f.n, 10); rep++) {
     console.error(`run ${c} ${arm} #${rep}`);
     rows.push(liveRun(c, arm, rep, o));
+    // Written after every run, so a long bench that dies keeps what it has.
+    fs.writeFileSync(out, JSON.stringify(rows, null, 2));
   }
-  const out = f.out || path.join(__dirname, 'results', `${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, JSON.stringify(rows, null, 2));
   console.log(table(rows));
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome, armOff, playwrightIn, browserEnv };
 if (require.main === module) main(process.argv.slice(2));
