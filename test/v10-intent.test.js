@@ -76,7 +76,7 @@ test('precise patterns keep their fixed line', () => {
     ['fix the settings page', 'vague', 'FEATURE', /names no defect/],
   ];
   for (const [p, pattern, name, re] of cases) {
-    const r = intent.readIntent(p);
+    const r = intent.readIntent(p, { retired: true });
     assert.strictEqual(r.pattern, pattern, p);
     assert.strictEqual(r.name, name, p);
     assert.match(r.line, re, p);
@@ -164,8 +164,8 @@ test('the turn file is written on every prompt in a repo and names the reading',
   const dir = repo();
   const name = (prompt, id) => { inject({ prompt, cwd: dir, session_id: id }, home); return turn(home, id).intent; };
   assert.strictEqual(name('add a back button to the settings page', 'n1'), 'SELF');
-  assert.strictEqual(name('make the card slightly smaller', 'n2'), 'EXACT');
-  assert.strictEqual(name('rename Foo everywhere', 'n3'), 'SWEEP');
+  assert.strictEqual(name('make the card slightly smaller', 'n2'), 'SELF');
+  assert.strictEqual(name('rename Foo everywhere', 'n3'), 'SELF');
   assert.strictEqual(name('explain how the router works', 'n4'), 'SHOW');
   assert.strictEqual(name('add a flag, it must print JSON', 'n5'), '');
   assert.strictEqual(name('no thats not what i meant', 'n1'), 'MISREAD');
@@ -341,4 +341,10 @@ test('a review that says "only" and names a file does not get the literal line',
   const p = 'audit lib/session.js and list the risks. review only, do not modify any file';
   assert.strictEqual(intent.readIntent(p, { kind: 'edit' }).pattern, 'self');
   assert.strictEqual(intent.readIntent('only change the title in src/header.js', { kind: 'edit' }).pattern, 'narrow-path');
+});
+
+test('retired patterns never pick a line but the eval still scores them', () => {
+  assert.strictEqual(intent.readIntent('make the card slightly smaller').pattern, 'self');
+  assert.strictEqual(intent.readIntent('rename Foo everywhere').pattern, 'self');
+  assert.ok(intent.PRECISE.filter((p) => p.retired).map((p) => p.id).sort().join() === 'degree,sweep');
 });
