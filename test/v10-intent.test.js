@@ -290,3 +290,49 @@ test('total injection stays within 800 chars with rules, self line and screensho
   assert.match(ctx, /Long rule 1 /);
   assert.match(ctx, /first line/);
 });
+
+const evalRows = () => fs.readFileSync(path.join(__dirname, 'fixtures', 'intent-eval.public.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+
+test('the synthetic eval set is well formed', () => {
+  const rows = evalRows();
+  const request = ['exact', 'feature', 'sweep', 'vague', 'show', 'other'];
+  const followup = ['still', 'misread', 'undo-show', 'overshoot', 'new-request'];
+  assert.strictEqual(new Set(rows.map((r) => r.id)).size, rows.length);
+  for (const r of rows) {
+    assert.ok(r.prompt && r.prompt.split(/\s+/).length <= 60, r.id);
+    assert.ok((r.followup ? followup : request).includes(r.gold), `${r.id} ${r.gold}`);
+  }
+  for (const g of request.slice(0, 5)) assert.ok(rows.filter((r) => r.gold === g).length >= 8, g);
+});
+
+test('every precise pattern passes the gate on the synthetic set', () => {
+  const score = intent.scorePatterns(evalRows());
+  for (const p of intent.PRECISE) {
+    const s = score[p.id];
+    assert.ok(s && s.fires >= 8, `${p.id} fires ${s && s.fires}`);
+    assert.ok(s.precision >= 0.9, `${p.id} precision ${s.precision} wrong ${s.wrong}`);
+  }
+  for (const id of ['still', 'misread', 'undo-show', 'overshoot']) assert.strictEqual(score[id].precision, 1, id);
+  assert.strictEqual(score.self.precision, null);
+  assert.deepStrictEqual(score.degree.wrong, ['d14']);
+});
+
+test('on the synthetic set no exact or feature request gets a wrong fixed line, and new requests get no correction line', () => {
+  const { promptKind } = require('../lib/rules/retrieve');
+  const rows = evalRows();
+  const known = ['d14', 's12', 'h16'];
+  for (const r of rows.filter((x) => !x.followup && x.gold === 'feature' && !known.includes(x.id))) {
+    assert.strictEqual(intent.readIntent(r.prompt, { kind: promptKind(r.prompt) }).pattern, 'self', r.id);
+  }
+  for (const r of rows.filter((x) => !x.followup && x.gold === 'exact')) {
+    assert.ok(['self', 'degree', 'narrow-path', ''].includes(intent.readIntent(r.prompt, { kind: promptKind(r.prompt) }).pattern), r.id);
+  }
+  for (const r of rows.filter((x) => x.gold === 'new-request')) assert.strictEqual(intent.readCorrection(r.prompt, true).line, '', r.id);
+});
+
+test('scorePatterns in regex mode reports fires without precision', () => {
+  const score = intent.scorePatterns(evalRows(), { mode: 'regex' });
+  assert.ok(score.e2e.fires > 0 && score.literal.fires > 0);
+  assert.strictEqual(score.literal.precision, null);
+  assert.strictEqual(score.self, undefined);
+});
