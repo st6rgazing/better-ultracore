@@ -19,3 +19,15 @@ test('value reads keys, functions and booleans', () => {
   assert.strictEqual(stats.value({ a: 1 }, (r) => r.a + 1), 2);
   assert.strictEqual(stats.value({}, 'missing'), null);
 });
+
+const ROWS = [
+  { case: 'x', arm: 'buc', interventions: 0 }, { case: 'x', arm: 'buc', interventions: 1 },
+  { case: 'x', arm: 'plain', interventions: 2 }, { case: 'x', arm: 'plain', interventions: 2 },
+  { case: 'y', arm: 'buc', interventions: 1 }, { case: 'y', arm: 'plain', interventions: 1 },
+  { case: 'z', arm: 'buc', interventions: 0 },
+  { case: 'y', arm: 'ultra', interventions: 9 },
+];
+
+test('caseDiffs pairs arms within a case and drops unpaired cases', () => {
+  assert.deepStrictEqual(stats.caseDiffs(ROWS, 'buc', 'plain', 'interventions'), [{ case: 'x', diff: -1.5 }, { case: 'y', diff: 0 }]);
+});

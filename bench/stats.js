@@ -20,4 +20,21 @@ function value(row, metric) {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-module.exports = { rng, value };
+// One paired difference per case: mean of the metric in arm A minus the mean in arm B.
+// Cases missing either arm are left out, so reps never count as independent samples.
+function caseDiffs(rows, armA, armB, metric) {
+  const by = new Map();
+  for (const r of rows) {
+    if (r.arm !== armA && r.arm !== armB) continue;
+    const v = value(r, metric);
+    if (v === null) continue;
+    if (!by.has(r.case)) by.set(r.case, { [armA]: [], [armB]: [] });
+    by.get(r.case)[r.arm].push(v);
+  }
+  const avg = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const out = [];
+  for (const [c, g] of by) if (g[armA].length && g[armB].length) out.push({ case: c, diff: avg(g[armA]) - avg(g[armB]) });
+  return out;
+}
+
+module.exports = { rng, value, caseDiffs };
