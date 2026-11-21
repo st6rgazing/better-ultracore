@@ -39,3 +39,28 @@ test('tally and leverMetrics give corrections addressed per 1k injected tokens f
   assert.deepStrictEqual(m.orchestrate, { turns: 1, tokens: 20, followed: 1, addressed: null, per_1k: null });
   assert.deepStrictEqual(levers.leverMetrics({}), {});
 });
+
+test('replay records the levers shown on each turn and on the request before a correction', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { replay, metrics } = require('../bench/replay');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-levers-')));
+  const dir = path.join(root, 'projects', '-Users-x-app');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (type, min, content) => JSON.stringify({ type, sessionId: 'l1', timestamp: `2026-05-01T10:${String(min).padStart(2, '0')}:00.000Z`, cwd: '/Users/x/app', message: { role: type, content } });
+  fs.writeFileSync(path.join(dir, 'l1.jsonl'), `${[line('user', 0, 'ultracode add icons to the toolbar'), line('assistant', 1, [{ type: 'text', text: 'done' }]), line('user', 5, 'no emoji, use the icon set')].join('\n')}\n`);
+  try {
+    const sessions = require('../bench/transcripts').allSessions(path.join(root, 'projects'));
+    const run = replay(sessions, { home: path.join(root, 'home'), learn: false });
+    assert.strictEqual(run.turns, 2);
+    assert.strictEqual(run.levers.intent.turns, 2);
+    assert.strictEqual(run.levers.orchestrate.turns, 1);
+    assert.strictEqual(run.corrections.length, 1);
+    assert.deepStrictEqual(Object.keys(run.corrections[0].levers).sort(), ['intent', 'orchestrate']);
+    assert.strictEqual(run.corrections[0].pattern, 'misread');
+    const m = metrics(run).levers;
+    assert.deepStrictEqual([m.intent.followed, m.intent.addressed, m.orchestrate.addressed], [1, 1, null]);
+    assert.ok(m.intent.per_1k > 0);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

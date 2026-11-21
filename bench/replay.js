@@ -11,6 +11,8 @@ const inject = require('../hooks/inject');
 const sessionEnd = require('../hooks/session-end');
 const { correctiveTurns } = require('../lib/rules/mine');
 const { redact } = require('../lib/prefs/redact');
+const { readCorrection } = require('../lib/intent');
+const { leversOf, tally, leverMetrics } = require('./levers');
 
 // Ids of the rules a correction mentions by keyword: the same any-keyword match hooks/session-end.js bumps on.
 function wouldBump(rules, text) {
@@ -49,7 +51,7 @@ function usable(list, known) {
 // corrections and bumps rules. Every `every` sessions decayed rules are archived and `cluster(candidates, rules)`
 // returns rules to import, auto-approved in replay only. learn: false never clusters, so no rule is ever learned.
 // byRepo: false ranks without per-repo stats.
-// Returns {sessions, turns, corrections, injections, rules, archived, cluster_calls}. A correction is a turn the rule
+// Returns {sessions, turns, corrections, injections, levers, rules, archived, cluster_calls}; levers is {name: {turns, chars}}. A correction is a turn the rule
 // miner would queue, with the request before it: {session, idx, ts, request, text, injected, would_bump, covered,
 // regret}. covered lists the rules that were shown on the request and that the correction would bump.
 function replay(sessions, { home, learn = true, every = 5, cluster = null, byRepo = true, log = () => {} } = {}) {
@@ -59,6 +61,7 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
   const corrections = [];
   const injections = [];
   const done = new Set();
+  const levers = {};
   let calls = 0;
   let turns = 0;
   let learning = learn && typeof cluster === 'function';
@@ -77,16 +80,19 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
           const shown = new Set(prev.rules.map((r) => r.id));
           corrections.push({
             session: s.session, idx: t.idx, ts: t.ts, request: prev.text, text: t.text, injected: [...shown], would_bump: bump,
+            levers: prev.levers, pattern: readCorrection(t.text, true).pattern,
             covered: prev.rules.filter((r) => bump.includes(r.id)),
             regret: wouldBump(readArchive().filter((r) => r && r.when && !ids.has(r.id)), t.text),
           });
         }
-        inject.run({ prompt: t.text, cwd: t.cwd || s.cwd, session_id: s.session, transcript_path: '' });
+        const out = inject.run({ prompt: t.text, cwd: t.cwd || s.cwd, session_id: s.session, transcript_path: '' });
+        const shownLevers = leversOf(out ? out.hookSpecificOutput.additionalContext : '', t.text);
+        tally(levers, shownLevers);
         const last = store.loadLastTurn(s.session);
         const byId = new Map(store.loadRules().map((r) => [r.id, r]));
         const rules = (last && Array.isArray(last.rules) ? last.rules : []).map((id) => ({ id, rule: (byId.get(id) || {}).rule || '', origin: (byId.get(id) || {}).origin || '' }));
         if (rules.length) injections.push({ session: s.session, idx: t.idx, ts: t.ts, prompt: t.text, rules });
-        prev = { text: t.text, rules };
+        prev = { text: t.text, rules, levers: shownLevers };
       }
       process.env.BUC_NOW = s.end || s.start;
       sessionEnd.run({ transcript_path: s.file });
@@ -108,7 +114,7 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
       }
     });
     return {
-      sessions: sessions.length, turns, corrections, injections, cluster_calls: calls,
+      sessions: sessions.length, turns, corrections, injections, levers, cluster_calls: calls,
       rules: store.loadRules().map((r) => ({ id: r.id, count: r.count, origin: r.origin })), archived: readArchive().map((r) => r.id),
     };
   } finally {
@@ -153,6 +159,8 @@ function metrics(run, { confirmed = null, relevant = null } = {}) {
       ...(relevant && { judged: relevant.sampled, relevant: relevant.yes, precision: share(relevant.yes, relevant.sampled) }),
     },
     decay_regret: { archived: run.archived.length, regretted_rules: regretted.size, corrections: c.filter((x) => x.regret.length).length },
+    // Per injected lever: its token cost and the corrections of the kind it targets that followed it (bench/levers.js).
+    levers: leverMetrics(run),
   };
 }
 
