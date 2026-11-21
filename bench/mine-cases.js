@@ -11,7 +11,9 @@ const { rng } = require('./stats');
 const { redact } = require('../lib/prefs/redact');
 
 const TEMP_DIR = /(^|-)(tmp|private-tmp|var-folders|bench|scratch|worktrees)(-|$)/;
-const HARNESS = /^\s*<|system-reminder|^\s*\[Request interrupted|^\/\w|^Caveat:|^This session is being continued/;
+const HARNESS = /^\s*<|system-reminder|^\s*\[Request interrupted|^\/\w|^Caveat:|^This session is being continued|^(Task|Background) \(from the session that started this one\)/;
+// A reminder the harness puts in front of what the user typed (linked-session status and the like).
+const LEADING_REMINDER = /^\s*(<system-reminder>[\s\S]*?<\/system-reminder>\s*)+/;
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 // Same cue and length limit as lib/rules/mine.js: what the rule miner could see.
 const CUE = /^\s*(no\b|nope|don'?t|do not|stop|still|undo|revert|wrong|not working|i said|only|always|never|that'?s not|why did you|you (changed|didn'?t|forgot))|\b(not working|doesn'?t work|still (broken|not|fails?)|i (said|asked)|only (the|what)|too much|again)\b/i;
@@ -78,6 +80,7 @@ function parseSession(file) {
     const blocks = typeof c === 'string' ? [{ type: 'text', text: c }] : Array.isArray(c) ? c : [];
     if (blocks.some((b) => b && b.type === 'tool_result')) continue;
     let text = blocks.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim();
+    text = text.replace(LEADING_REMINDER, '').trim();
     if (!text) continue;
     const attached = /<wake\b[\s\S]*has-attachments?=|^\s*@"[^"]*\.(png|jpe?g|gif|webp)"/i.test(text);
     if (/<wake\b/.test(text)) {

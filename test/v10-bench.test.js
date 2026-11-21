@@ -172,6 +172,21 @@ test('parseSession: a message typed while the agent was busy is a turn, once, wi
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('parseSession: a leading harness reminder is dropped, the typed text kept; a brief from another session is not a turn', () => {
+  const dir = tmp('reminder');
+  try {
+    const file = path.join(dir, 's.jsonl');
+    const rem = '<system-reminder>\nLinked sessions now: a (idle).\n</system-reminder>\n\n';
+    fs.writeFileSync(file, [
+      user(1, `${rem}Task (from the session that started this one):\nBuild the shop.`, '/r'),
+      user(2, `${rem}\nthe cards are still off centre`, '/r'),
+      user(3, rem, '/r'),
+      user(4, 'something with a <system-reminder>x</system-reminder> inside', '/r'),
+    ].map((l) => JSON.stringify(l)).join('\n'));
+    assert.deepStrictEqual(mc.parseSession(file).turns.map((t) => t.text), ['the cards are still off centre']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('transcripts skips temp project dirs', () => {
   const fx = fixture();
   try {
