@@ -73,3 +73,12 @@ test('the prompt feedback votes on the rules the previous turn was shown', () =>
   feedback.onPrompt({ prompt: 'no, that is not what I asked', sessionId: 'v', repo: 'r' });
   assert.strictEqual(store.loadRules()[0].votes, 2);
 }));
+
+test('the prompt hook shows at most three rules, the best first', () => withHome(() => {
+  const inject = require('../hooks/inject');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-votes-cwd-'));
+  store.importRules(['a', 'b', 'c', 'd', 'e'].map((id, i) => ({ id: `rule-${id}`, rule: `rule text ${id}`, when: { keywords: ['footer'] }, count: 10 - i })));
+  const text = inject.run({ prompt: 'fix the footer', cwd, session_id: 'cap', transcript_path: '' }).hookSpecificOutput.additionalContext;
+  assert.deepStrictEqual(text.match(/rule text \w/g), ['rule text a', 'rule text b', 'rule text c']);
+  assert.deepStrictEqual(store.loadLastTurn('cap').rules, ['rule-a', 'rule-b', 'rule-c']);
+}));

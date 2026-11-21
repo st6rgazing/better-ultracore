@@ -14,6 +14,7 @@ const handsoff = require('../lib/handsoff');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 const orchestrate = require('../lib/orchestrate');
+const votes = require('../lib/rules/votes');
 
 const MAX_CONTEXT = 800;
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
@@ -81,7 +82,9 @@ function run(input) {
   const repo = root ? repoKey(root.trim()) : null;
   try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
   habits.capture(prompt, repo);
-  const { matched: all, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
+  const { matched: found, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
+  // At most 3 rules reach the prompt, best first (lib/rules/votes.js).
+  const all = votes.cap(found, root ? root.trim() : cwd);
   const fixed = [];
   if (root) {
     fixed.push(staleLine(root.trim(), prompt));
