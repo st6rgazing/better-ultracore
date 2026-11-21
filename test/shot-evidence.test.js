@@ -5,9 +5,11 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync, spawnSync } = require('node:child_process');
 const shot = require('../lib/shot');
 
 const ROOT = path.join(__dirname, '..');
+const SHOTS = path.join(os.tmpdir(), 'buc-shots');
 const FIXTURE = path.join(__dirname, 'fixtures', 'ui-app');
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 // A Playwright module to test with: BUC_PLAYWRIGHT, else the one in the repo's vite-express fixture. '' when there is none.
@@ -82,6 +84,52 @@ test('shot with Chrome reads seen from a DOM dump: the classes found, none, or n
   assert.strictEqual(await seen('', ['wide']), null);
   assert.strictEqual(await seen('<div class="wide">hi</div>', undefined), null);
   assert.strictEqual(await seen('<div class="wide">hi</div>', []), null);
+});
+
+// A git repo holding the fixture app, and a Stop hook run against it with a stand-in Chrome that dumps the given HTML.
+function stopOn({ html, edit }) {
+  const dir = app();
+  const git = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '-q', '-b', 'main');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 't');
+  git('add', '.');
+  git('commit', '-qm', 'init');
+  const home = tmp('buc-home-');
+  const turn = { session_id: 's', cwd: dir, root: dir, prompt: 'make the card wider', kind: 'edit', head: git('rev-parse', 'HEAD'), porcelain: '', rules: [], checks: [] };
+  fs.writeFileSync(path.join(home, 'turn-s.json'), JSON.stringify(turn));
+  for (const [f, s] of Object.entries(edit)) fs.writeFileSync(path.join(dir, f), s);
+  const before = fs.existsSync(SHOTS) ? fs.readdirSync(SHOTS).length : 0;
+  const r = spawnSync('node', [path.join(ROOT, 'hooks', 'stop-check.js')], {
+    input: JSON.stringify({ session_id: 's', cwd: dir, last_assistant_message: 'Done.' }), encoding: 'utf8',
+    env: { ...process.env, BUC_HOME: home, BUC_OFF: '', BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(html), BUC_PLAYWRIGHT: '' },
+  });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const left = (fs.existsSync(SHOTS) ? fs.readdirSync(SHOTS).length : 0) - before;
+  // A quiet Stop clears the turn file.
+  const file = path.join(home, 'turn-s.json');
+  return { out: r.stdout.trim() ? JSON.parse(r.stdout) : null, left, turn: fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null };
+}
+
+test('Stop fallback hands the screenshot over when the page shows a class the turn added', () => {
+  const { out, turn } = stopOn({ html: '<div class="card wide">hi</div>', edit: { 'index.html': '<div class="card wide">hi</div>\n' } });
+  const text = out.hookSpecificOutput.additionalContext;
+  assert.match(text, /after your change, showing \.card, \.wide: (\S+\.png) \. Read it once/);
+  fs.rmSync(text.match(/: (\S+\.png) /)[1]);
+  assert.ok(turn.shotAt > 0);
+});
+
+test('Stop fallback stays quiet without evidence: the page lacks the classes, the DOM is unknown, or the turn added none', () => {
+  const edit = { 'index.html': '<div class="card wide">hi</div>\n' };
+  const elsewhere = stopOn({ html: '<div class="loader">...</div>', edit });
+  assert.strictEqual(elsewhere.out, null, 'a page without the changed classes is not shown');
+  assert.strictEqual(elsewhere.left, 0, 'the unused image is removed');
+  assert.strictEqual(elsewhere.turn, null, 'nothing to continue for: the turn is closed');
+  assert.strictEqual(stopOn({ html: '', edit }).out, null, 'no DOM, no evidence');
+  const textOnly = stopOn({ html: '<p>Bye</p>', edit: { 'index.html': '<p>Bye</p>\n' } });
+  assert.strictEqual(textOnly.out, null, 'added lines without a class name take no screenshot');
+  const logic = stopOn({ html: '<div class="card">hi</div>', edit: { 'view.jsx': 'export const play = () => sound.start();\n' } });
+  assert.strictEqual(logic.out, null, 'a logic-only change to a UI file takes no screenshot');
 });
 
 test('capturePlaywright reports which of the given classes the capture shows, waiting for a late one', { skip: NO_PW }, async () => {

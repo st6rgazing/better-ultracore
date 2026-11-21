@@ -434,7 +434,8 @@ function uiRepo(conf = { ui: { dev: 'node server.js' } }) {
   const fx = path.join(__dirname, 'fixtures', 'ui-app');
   const dir = repo({ 'server.js': fs.readFileSync(path.join(fx, 'server.js'), 'utf8'), 'index.html': fs.readFileSync(path.join(fx, 'index.html'), 'utf8'), 'app.js': 'a\n', '.claude/buc.json': JSON.stringify(conf) });
   const bin = path.join(tmp('buc-bin-'), 'fake-chrome');
-  fs.writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "${a#--screenshot=}";; esac; done\n', { mode: 0o755 });
+  // For --dump-dom it prints the page the tests write, so the changed classes count as shown.
+  fs.writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "${a#--screenshot=}";; --dump-dom) echo \'<div class="card wide">hi</div>\';; esac; done\n', { mode: 0o755 });
   return { dir, env: { BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: bin, BUC_PLAYWRIGHT: '' } };
 }
 
@@ -446,7 +447,7 @@ test('Stop fallback: UI files changed and no shot gives the PNG path as addition
   const out = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home, env);
   assert.strictEqual(out.decision, undefined);
   const text = out.hookSpecificOutput.additionalContext;
-  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change: (\S+\.png) \. Read it once/);
+  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change, showing \.card, \.wide: (\S+\.png) \. Read it once/);
   const png = text.match(/: (\S+\.png) /)[1];
   assert.strictEqual(fs.readFileSync(png, 'utf8'), 'PNGDATA');
   fs.rmSync(png);
