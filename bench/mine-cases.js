@@ -163,4 +163,13 @@ function mine(root, { skip = [] } = {}) {
   return transcripts(root, skip).flatMap(triples);
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine };
+const words = (text) => text.trim().split(/\s+/).filter(Boolean).length;
+
+// Mechanical proxy for "reads standalone": long enough, and does not open by leaning on the previous turn.
+function standalone(text) {
+  const t = text.trim();
+  if (words(t) < 4) return false;
+  return !/^\s*(no\b|nope|still|undo|revert|wrong|not\b|i said|that'?s not|why did you|you |also|and|now|ok|okay|yes|yeah|yep|it|its|it'?s|that|this|these|those|then|same|again|here|done|keep|or)\b/i.test(t);
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone };
