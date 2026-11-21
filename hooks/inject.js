@@ -14,6 +14,8 @@ const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
 const MAX_CONTEXT = 800;
+// The Stop hook runs the typecheck; telling the agent to run it too doubled the wall time.
+const TYPECHECK_LINE = 'The typecheck runs automatically when you finish; do not run it yourself.';
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 const tryGit = (cwd, ...args) => { try { return git(cwd, ...args); } catch { return null; } };
@@ -45,7 +47,7 @@ function hadPreviousTurn(sessionId, transcriptPath) {
 }
 
 // Fixed lines get at most MAX_FIXED chars so rules keep room. The self-classification line first gives way to its
-// short form; after that lines drop in the given order (verify, probe, intent).
+// short form; after that lines drop in the given order (typecheck, probe, intent).
 const MAX_FIXED = 500;
 function capFixed(fixed, dropOrder) {
   const size = () => fixed.filter(Boolean).join('\n').length;
@@ -84,10 +86,10 @@ function run(input) {
     if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
   }
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
-  if (tc) fixed.push(`Verify with ${tc} (not npx); report what you ran.`);
+  if (tc) fixed.push(TYPECHECK_LINE);
   const intent = correctionLine(prompt, hadPrev) || readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) }).line;
   fixed.push(intent, probeLine(prompt));
-  capFixed(fixed, [tc && fixed.find((l) => l.startsWith('Verify with')), fixed[fixed.length - 1], intent, SELF_SHORT]);
+  capFixed(fixed, [tc && TYPECHECK_LINE, fixed[fixed.length - 1], intent, SELF_SHORT]);
   // A learned rule is worth more than the long form of the self-classification line.
   if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
