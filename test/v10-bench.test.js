@@ -576,7 +576,7 @@ test('the committed held-out manifest holds only case ids, file names and sha256
     assert.match(id, /^ho-(ctl-)?\d\d$/);
     for (const f of ['setup.sh', 'accept.sh', 'solve.sh', 'prompt.txt', 'case.json']) assert.ok(files[f], `${id} ${f}`);
     for (const [name, h] of Object.entries(files)) {
-      assert.match(name, /^[a-z-]+\.(sh|txt|json|md|mts|mjs)$/);
+      assert.match(name, /^[a-z-]+\.(sh|txt|json|md|mts|mjs|patch)$/);
       assert.match(h, /^[0-9a-f]{64}$/);
     }
   }
