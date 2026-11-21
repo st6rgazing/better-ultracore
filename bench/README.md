@@ -78,6 +78,31 @@ Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (a
 
 Prints one JSON line: `diff` (mean difference over cases), `lo` and `hi` (90% percentile interval), `cases`, `B`, `seed`. The primary metric is `interventions` per run; any numeric or boolean row field works (`first_try_pass`, `tokens_to_accept`). `pairedBootstrap(rows, armA, armB, metric, {B, seed, level})` is the same thing as a function.
 
+## Held-out real-task set
+
+`bench/heldout/` (gitignored, like `bench/private/`) holds cases mined from real sessions that no rule was learned from and no plugin change was tuned on. Only `bench/heldout.manifest.json` is committed: case ids and the sha256 of every case file, written before any live run so the set cannot drift unnoticed. Nobody working on the hooks reads the directory.
+
+A correction case is a triple from one transcript: a request P, the user's next turn C that corrects how the agent read or carried out P, and the commits around them. `base` is the last commit before P, `wrong` the last commit before C, `fix` the last commit after C and before the next request. A control is a request that got a go-ahead and no correction.
+
+`bench/mine-cases.js` runs the procedure:
+
+    node bench/mine-cases.js mine --out bench/heldout/candidates.jsonl
+    node bench/mine-cases.js select --candidates bench/heldout/candidates.jsonl --labels bench/heldout/labels.json --rules ~/.better-ultracore/rules.json --existing bench/private --seed 10 --out bench/heldout/selection.json
+    node bench/mine-cases.js write --selection bench/heldout/selection.json --out bench/heldout --deps bench/private/deps.sh
+    node bench/mine-cases.js verify --dir bench/heldout
+    node bench/mine-cases.js manifest --dir bench/heldout --out bench/heldout.manifest.json
+    node bench/mine-cases.js manifest --dir bench/heldout --check bench/heldout.manifest.json
+
+- `mine` pairs consecutive user turns of every non-temp transcript (short go-aheads such as "deploy" are looked through) and resolves SHAs by timestamp. Source repos are only read.
+- `select` applies the criteria mechanically and logs every reject with its reason: P at most 80 words, no image, standalone; assistant work after P; a fix commit; `base..fix` at most 300 lines; not within 3 turns of an existing case; C labelled a correction in `labels.json` (the one judgement step, made from P and C text before sampling); no leakage. Then a seeded sample within quotas (at most 5 per repo, 3 repos, 4 non-UI, 2 too wide, 2 too narrow, 1 show-do-not-edit), corrections the rule miner could not see first. `--skip-ids` drops a pick whose accept check cannot be written without reshuffling the rest.
+- Leakage is conservative: a correction the rule miner could see with 2 or more keywords of one rule, a request and correction that together carry 3 or more, or a near-duplicate (Jaccard at least 0.6) of a mined correction is rejected.
+- `write` emits `prompt.txt`, `followup.txt` (verbatim), `case.json`, `setup.sh` (clone, check out base, copy `node_modules`), `solve.sh` and `wrong.sh`. `accept.sh` and `solve-notes.md` are written by hand from the `wrong..fix` diff, preferring running behaviour over reading source.
+- `verify` is the dry check in fresh clones: accept must fail at base, fail at wrong and pass at fix.
+
+`bench/backfill-sources.js` maps existing rules to the corrections that may have sourced them, by keyword and over-inclusively, and prints `{rule id: [{session, repo, ts, h}]}` where `h` is the first 12 hex of the sha1 of the redacted text. It reads `rules.json` and never writes it.
+
+The set is small: the first build yielded 2 correction cases and 3 controls from 363 candidate pairs. Most real corrections do not directly follow the request they correct, were already used to learn rules, or are about taste. `bench/heldout/SELECTION.md` has the counts.
+
 ## Caveats
 
 - Small N: use `--n 3` or more before drawing conclusions; one run per cell is anecdote.
