@@ -663,3 +663,13 @@ test('intent eval CLI: build writes labelled rows to a private path, score print
     assert.ok(!fs.existsSync(path.join(ROOT, 'bench', 'intent-eval.jsonl')));
   } finally { for (const d of [root, work]) fs.rmSync(d, { recursive: true, force: true }); }
 });
+
+test('bench/run.js rejects unknown flags and unsplit flag strings', () => {
+  const { spawnSync } = require('node:child_process');
+  const run = (...a) => spawnSync('node', [require('node:path').join(__dirname, '..', 'bench', 'run.js'), ...a], { encoding: 'utf8' });
+  for (const args of [['--help'], ['--arms buc --n 5'], ['--bogus', '1']]) {
+    const r = run(...args);
+    assert.strictEqual(r.status, 2, args.join(' '));
+    assert.match(r.stderr, /unknown argument/);
+  }
+});
