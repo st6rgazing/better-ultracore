@@ -30,3 +30,10 @@ test('kindOf tells edits, test commands, other runs, agents and read-only comman
   for (const c of ['node script.js', 'curl -s localhost:3000', 'ls && node build.js']) assert.strictEqual(log.kindOf(bash(c)), 'run', c);
   for (const c of ['cat a.js', 'git status', 'ls -la && git diff', 'grep -rn foo src']) assert.strictEqual(log.kindOf(bash(c)), '', c);
 });
+
+test('record numbers the calls of a batch and keeps the last edit, run and test', () => {
+  const calls = [{ tool_name: 'Read', tool_input: {} }, { tool_name: 'Edit', tool_input: {} }, bash('npm test', 'Exit code 1\n# fail 2'), bash('node x.js', { stdout: 'ok' })];
+  assert.deepStrictEqual(log.record({ toolCalls: 10 }, calls), { lastEditAt: 12, lastRunAt: 14, lastTestAt: 13, lastTestOk: false });
+  assert.deepStrictEqual(log.record({}, [bash('npm test', { stdout: '# fail 0' })]), { lastRunAt: 1, lastTestAt: 1, lastTestOk: true });
+  assert.deepStrictEqual(log.record({ toolCalls: 3 }, [{ tool_name: 'Grep', tool_input: {} }]), {});
+});
