@@ -73,3 +73,13 @@ test('deletedFiles lists files removed this turn, committed or not, and not ones
   git(dir, 'commit', '-qm', 'drop b');
   assert.deepStrictEqual(check.deletedFiles(dir, t).sort(), ['a.js', 'b.js']);
 });
+
+test('turnFiles maps changed, created and removed paths to their hash before the turn', () => {
+  const dir = repo();
+  const t = turn(dir, 'edit things');
+  const before = git(dir, 'rev-parse', 'HEAD:app.js');
+  write(dir, 'app.js', 'changed\n');
+  write(dir, 'new.js', 'n\n');
+  fs.unlinkSync(path.join(dir, 'other.js'));
+  assert.deepStrictEqual(check.turnFiles(dir, t), { 'app.js': before, 'new.js': null, 'other.js': git(dir, 'rev-parse', 'HEAD:other.js') });
+});
