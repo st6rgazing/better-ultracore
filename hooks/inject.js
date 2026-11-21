@@ -9,12 +9,13 @@ const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
 const habits = require('../lib/rules/habits');
-const { readIntent, intentMode, readCorrection, SELF, SELF_SHORT, HANDSOFF_LINE } = require('../lib/intent');
+const { readIntent, intentMode, readCorrection, SELF, SELF_SHORT, HANDSOFF_LINE, isUiPrompt, uiServer, shotLine } = require('../lib/intent');
 const handsoff = require('../lib/handsoff');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
 const MAX_CONTEXT = 800;
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
 // The Stop hook runs the typecheck; telling the agent to run it too doubled the wall time.
 const TYPECHECK_LINE = 'The typecheck runs automatically when you finish; do not run it yourself.';
 
@@ -48,7 +49,7 @@ function hadPreviousTurn(sessionId, transcriptPath) {
 }
 
 // Fixed lines get at most MAX_FIXED chars so rules keep room. The self-classification line first gives way to its
-// short form; after that lines drop in the given order (typecheck, probe, intent).
+// short form; after that lines drop in the given order (typecheck, screenshot, probe, intent).
 const MAX_FIXED = 500;
 function capFixed(fixed, dropOrder) {
   const size = () => fixed.filter(Boolean).join('\n').length;
@@ -93,10 +94,18 @@ function run(input) {
   const correction = readCorrection(prompt, hadPrev);
   const reading = handsOff ? { name: 'HANDSOFF', line: HANDSOFF_LINE } : correction.line ? correction : readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) });
   const intent = reading.line;
-  fixed.push(intent, handsOff ? '' : probeLine(prompt));
-  capFixed(fixed, [tc && TYPECHECK_LINE, fixed[fixed.length - 1], intent, SELF_SHORT]);
+  // A first-turn UI edit with a dev server to shoot: tell the agent how to look at the result.
+  const shot = root && kind === 'edit' && !handsOff && !correction.line && !handsoff.isApply(prompt) && isUiPrompt(prompt) && uiServer(root.trim()) ? shotLine(PLUGIN_ROOT) : '';
+  const probe = handsOff ? '' : probeLine(prompt);
+  fixed.push(intent, probe, shot);
+  capFixed(fixed, [tc && TYPECHECK_LINE, shot, probe, intent, SELF_SHORT]);
   // A learned rule is worth more than the long form of the self-classification line.
   if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
+  // At least the top rule is shown: the typecheck, screenshot and probe lines give way to it, the intent line does not.
+  for (const line of [tc && TYPECHECK_LINE, shot, probe]) {
+    if (!all.length || fit(all, fixed.filter(Boolean)).kept.length) break;
+    if (line && fixed.includes(line)) fixed[fixed.indexOf(line)] = '';
+  }
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
   // Read before saveLastTurn starts the new record: the files the previous turn changed, for the undo check.
   const prev = sessionId ? store.loadLastTurn(sessionId) : null;
@@ -110,7 +119,7 @@ function run(input) {
       session_id: sessionId, cwd, root: root.trim(), prompt: redact(prompt), kind, head: tryGit(root.trim(), 'rev-parse', 'HEAD')?.trim() || null,
       porcelain: tryGit(root.trim(), 'status', '--porcelain') || '',
       rules: checked.map((r) => ({ id: r.id, cmd: r.check.cmd })), checks: [...checked.map((r) => r.check.cmd), ...(tc ? ['typecheck'] : [])],
-      intent: shown ? reading.name : '', ui: false, toolCalls: 0, shotAt: 0,
+      intent: shown ? reading.name : '', ui: Boolean(shot) && fixed.includes(shot), toolCalls: 0, shotAt: 0,
       ...(prev && prev.files && { prevFiles: prev.files }),
     });
   }

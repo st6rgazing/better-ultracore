@@ -228,5 +228,65 @@ test('shotLine names the helper under the plugin root and is empty without it', 
   assert.strictEqual(intent.shotLine(''), '');
   fs.mkdirSync(path.join(plugin, 'bin'));
   fs.writeFileSync(path.join(plugin, 'bin', 'buc-shot'), '');
-  assert.strictEqual(intent.shotLine(plugin), `After editing, run node "${plugin}/bin/buc-shot" --path <route> (the route you changed, or /), Read the PNG once and say what you saw.`);
+  assert.strictEqual(intent.shotLine(plugin), `After editing, run node "${plugin}/bin/buc-shot" --path <route>, Read the PNG once and say what you saw.`);
+});
+
+function plugin() {
+  const dir = tmp('buc-plugin-');
+  fs.mkdirSync(path.join(dir, 'bin'));
+  fs.writeFileSync(path.join(dir, 'bin', 'buc-shot'), '');
+  return dir;
+}
+
+test('the screenshot line is injected only for a UI edit with a resolvable server', () => {
+  const home = tmp('buc-home-');
+  const root = plugin();
+  const env = { CLAUDE_PLUGIN_ROOT: root };
+  const ui = repo({ 'playwright.config.ts': 'export default {}\n' });
+  const ctx = inject({ prompt: 'add a back button to the settings page', cwd: ui, session_id: 'u1' }, home, env);
+  assert.ok(ctx.includes(`After editing, run node "${root}/bin/buc-shot" --path <route>, Read the PNG once and say what you saw.`), ctx);
+  assert.match(ctx, /EXACT \(/);
+  assert.ok(ctx.length <= 500, String(ctx.length));
+  assert.strictEqual(turn(home, 'u1').ui, true);
+  const no = [
+    [{ prompt: 'add a back button to the settings page', cwd: repo(), session_id: 'u2' }, env],
+    [{ prompt: 'fix the off by one in total()', cwd: ui, session_id: 'u3' }, env],
+    [{ prompt: 'explain how the settings page works', cwd: ui, session_id: 'u4' }, env],
+    [{ prompt: 'no thats not what i meant, the button is wrong', cwd: ui, session_id: 'u1' }, env],
+    [{ prompt: 'add a back button to the settings page', cwd: ui, session_id: 'u5' }, { CLAUDE_PLUGIN_ROOT: tmp('buc-plugin-') }],
+    [{ prompt: 'add a back button to the settings page', cwd: ui, session_id: 'u6' }, { ...env, BUC_OFF: 'shot' }],
+  ];
+  for (const [input, e] of no) {
+    assert.doesNotMatch(inject(input, home, e), /buc-shot/, `${input.session_id} ${input.prompt}`);
+    assert.strictEqual(turn(home, input.session_id).ui, false, input.session_id);
+  }
+});
+
+test('every fixed line together stays within 500 chars and the screenshot line goes before the effect probe', () => {
+  const home = tmp('buc-home-');
+  const env = { CLAUDE_PLUGIN_ROOT: plugin() };
+  const dir = repo({ 'playwright.config.ts': 'export default {}\n', 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) });
+  const plain = inject({ prompt: 'add icons to the buttons in the toolbar', cwd: dir, session_id: 'c1' }, home, env);
+  assert.ok(plain.length <= 500, String(plain.length));
+  assert.match(plain, /buc-shot/);
+  assert.match(plain, /Name your reading in your first line/);
+  assert.match(plain, /typecheck runs automatically/);
+  const sound = inject({ prompt: 'add a sound when the intro animation plays', cwd: dir, session_id: 'c2' }, home, env);
+  assert.ok(sound.length <= 500, String(sound.length));
+  assert.match(sound, /runtime effect/);
+  assert.match(sound, /Name your reading in your first line/);
+  assert.doesNotMatch(sound, /buc-shot/);
+  assert.strictEqual(turn(home, 'c2').ui, false);
+  assert.strictEqual(turn(home, 'c2').intent, 'SELF');
+});
+
+test('total injection stays within 800 chars with rules, self line and screenshot line', () => {
+  const home = tmp('buc-home-');
+  const rule = (i) => ({ id: `long-${i}`, rule: `Long rule ${i} ${'x'.repeat(150)}.`, when: { keywords: ['button'], paths: [], promptKinds: [] }, check: {}, kind: 'process', count: 10 - i, last_seen: new Date().toISOString(), violations: 0, pinned: false });
+  fs.writeFileSync(path.join(home, 'rules.json'), JSON.stringify([1, 2, 3, 4, 5].map(rule)));
+  const dir = repo({ 'playwright.config.ts': 'export default {}\n', 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) });
+  const ctx = inject({ prompt: 'add a back button to the settings page', cwd: dir, session_id: 'w1' }, home, { CLAUDE_PLUGIN_ROOT: plugin() });
+  assert.ok(ctx.length <= 800, String(ctx.length));
+  assert.match(ctx, /Long rule 1 /);
+  assert.match(ctx, /first line/);
 });
