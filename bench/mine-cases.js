@@ -11,7 +11,9 @@ const { rng } = require('./stats');
 const { redact } = require('../lib/prefs/redact');
 
 const TEMP_DIR = /(^|-)(tmp|private-tmp|var-folders|bench|scratch|worktrees)(-|$)/;
-const HARNESS = /^\s*<|system-reminder|^\s*\[Request interrupted|^\/\w|^Caveat:|^This session is being continued/;
+const HARNESS = /^\s*<|system-reminder|^\s*\[Request interrupted|^\/\w|^Caveat:|^This session is being continued|^(Task|Background) \(from the session that started this one\)/;
+// A reminder the harness puts in front of what the user typed (linked-session status and the like).
+const LEADING_REMINDER = /^\s*(<system-reminder>[\s\S]*?<\/system-reminder>\s*)+/;
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 // Same cue and length limit as lib/rules/mine.js: what the rule miner could see.
 const CUE = /^\s*(no\b|nope|don'?t|do not|stop|still|undo|revert|wrong|not working|i said|only|always|never|that'?s not|why did you|you (changed|didn'?t|forgot))|\b(not working|doesn'?t work|still (broken|not|fails?)|i (said|asked)|only (the|what)|too much|again)\b/i;
@@ -29,16 +31,41 @@ function relayed(text) {
   return out.filter(Boolean);
 }
 
+// A message the user typed while the agent was busy: stored as a queued_command attachment, not as a user entry.
+function queuedHuman(o) {
+  const a = o && o.type === 'attachment' && o.attachment;
+  if (!a || a.type !== 'queued_command' || !a.origin || a.origin.kind !== 'human') return null;
+  const blocks = typeof a.prompt === 'string' ? [{ type: 'text', text: a.prompt }] : Array.isArray(a.prompt) ? a.prompt : [];
+  const text = blocks.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim();
+  return text ? { text, image: blocks.some((b) => b && b.type === 'image') } : null;
+}
+
 // One transcript -> ordered user text turns, each with the tool calls made before the next user turn.
-// Sidechain, meta, tool-result and harness entries are not turns.
+// Sidechain, meta, tool-result and harness entries are not turns. Queued messages are turns; one that is
+// also stored as a typed entry within two minutes is kept once, as the typed entry. `n` names a turn in ids:
+// typed turns count 000, 001, ... as before, queued ones q000, q001, ..., and typed ones found behind a leading
+// reminder r000, r001, ..., so ids given before these two kinds were read stay valid.
 function parseSession(file) {
   const turns = [];
   let cur = null;
   let end = null;
+  let typed = 0;
+  let queued = 0;
+  let behind = 0;
+  const twin = (text, ts, isQueued) => turns.find((t) => !!t.queued === isQueued && t.text === text && Math.abs(new Date(ts) - new Date(t.ts)) <= 120000);
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     let o;
     try { o = JSON.parse(line); } catch { continue; }
-    if (!o || !o.message || o.isSidechain) continue;
+    if (!o || o.isSidechain) continue;
+    const q = queuedHuman(o);
+    if (q) {
+      if (o.timestamp) end = o.timestamp;
+      if (HARNESS.test(q.text) || twin(q.text, o.timestamp, false)) continue;
+      cur = { session: o.sessionId || path.basename(file, '.jsonl'), n: `q${String(queued++).padStart(3, '0')}`, queued: true, ts: o.timestamp, text: q.text, cwd: o.cwd || (cur && cur.cwd) || null, branch: o.gitBranch || (cur && cur.branch) || null, image: q.image, tools: 0, edits: 0, commits: 0, spawns: 0 };
+      turns.push(cur);
+      continue;
+    }
+    if (!o.message) continue;
     if (o.timestamp) end = o.timestamp;
     const c = o.message.content;
     if (o.type === 'assistant' && cur && Array.isArray(c)) {
@@ -55,6 +82,8 @@ function parseSession(file) {
     const blocks = typeof c === 'string' ? [{ type: 'text', text: c }] : Array.isArray(c) ? c : [];
     if (blocks.some((b) => b && b.type === 'tool_result')) continue;
     let text = blocks.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim();
+    const led = LEADING_REMINDER.test(text);
+    text = text.replace(LEADING_REMINDER, '').trim();
     if (!text) continue;
     const attached = /<wake\b[\s\S]*has-attachments?=|^\s*@"[^"]*\.(png|jpe?g|gif|webp)"/i.test(text);
     if (/<wake\b/.test(text)) {
@@ -62,9 +91,12 @@ function parseSession(file) {
       if (!human.length) continue;
       text = human.join('\n');
     } else if (HARNESS.test(text)) continue;
-    cur = { session: o.sessionId || path.basename(file, '.jsonl'), idx: turns.length, ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: 0, edits: 0, commits: 0, spawns: 0 };
+    const dup = twin(text, o.timestamp, true);
+    if (dup) turns.splice(turns.indexOf(dup), 1);
+    cur = { session: o.sessionId || path.basename(file, '.jsonl'), n: led ? `r${String(behind++).padStart(3, '0')}` : String(typed++).padStart(3, '0'), ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: dup ? dup.tools : 0, edits: dup ? dup.edits : 0, commits: dup ? dup.commits : 0, spawns: dup ? dup.spawns : 0 };
     turns.push(cur);
   }
+  turns.forEach((t, i) => { t.idx = i; });
   return { turns, end };
 }
 
@@ -122,46 +154,60 @@ const minerVisible = (text) => text.trim().length <= MINER_MAX_LEN && isCue(text
 const OPS = /^\s*(yes[, ]+|ok(ay)?[, ]+|done[, ]+)?(push|deploy|straight to|go live|ship|merge|commit|build to|try to deploy|relaunched|reconnected|keep|done|ok(ay)?|yes|yep|perfect|go ahead|continue)\b/i;
 const isOps = (text) => text.trim().split(/\s+/).length <= 8 && OPS.test(text);
 
-// Every pair of consecutive non-operational user turns (P, C) of one session with SHAs resolved; nothing is
-// filtered here. N is the next such turn after C without a correction cue, or the end of the session.
+// One candidate: request P, later turn C, SHAs resolved by timestamp. N is the next request after C without a
+// correction cue, or the end of the session. `far` marks a C that is not the next request after P.
+function candidate(turns, end, P, C, far) {
+  const req = turns.filter((t) => !isOps(t.text) || t === C);
+  const repo = repoOf(P.cwd);
+  let j = req.indexOf(C) + 1;
+  while (j < req.length && isCue(req[j].text)) j++;
+  const nIdx = j < req.length ? req[j].idx : turns.length;
+  const nTs = j < req.length ? req[j].ts : end;
+  // Assistant work between P and N: edit tools, commits and subagent spawns (subagents edit out of sight).
+  const work = turns.slice(P.idx, nIdx).reduce((n, t) => n + t.edits + t.commits + t.spawns, 0);
+  let shas = { base: null, wrong: null, fix: null, done: null };
+  let ref = null;
+  if (repo) {
+    ref = P.branch && git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${P.branch}`) ? P.branch : 'HEAD';
+    shas = resolveShas(repo, ref, P.ts, C.ts, nTs);
+  }
+  const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
+  const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
+  const id = `${P.session.slice(0, 8)}-${P.n}`;
+  return {
+    id, ...(far || !/^\d/.test(C.n) ? { key: `${id}>${C.n}` } : {}),
+    session: P.session, idx: P.idx, turns: turns.length, repo, ref,
+    p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
+    c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, queued: !!C.queued, cue: isCue(C.text), visible: minerVisible(C.text) },
+    ack: C.idx > P.idx + 1, n_ts: nTs, work, ...shas,
+    fix_lines: fixStat.lines, fix_files: fixStat.files, done_lines: doneStat.lines, done_files: doneStat.files,
+  };
+}
+
+// Every pair of consecutive non-operational user turns (P, C) of one session; nothing is filtered here.
 function triples(file) {
   const { turns, end } = parseSession(file);
   const req = turns.filter((t) => !isOps(t.text));
-  const out = [];
-  for (let i = 0; i + 1 < req.length; i++) {
-    const P = req[i];
-    const C = req[i + 1];
-    const repo = repoOf(P.cwd);
-    let j = i + 2;
-    while (j < req.length && isCue(req[j].text)) j++;
-    const nIdx = j < req.length ? req[j].idx : turns.length;
-    const nTs = j < req.length ? req[j].ts : end;
-    // Assistant work between P and N: edit tools, commits and subagent spawns (subagents edit out of sight).
-    const work = turns.slice(P.idx, nIdx).reduce((n, t) => n + t.edits + t.commits + t.spawns, 0);
-    let shas = { base: null, wrong: null, fix: null, done: null };
-    let ref = null;
-    if (repo) {
-      ref = P.branch && git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${P.branch}`) ? P.branch : 'HEAD';
-      shas = resolveShas(repo, ref, P.ts, C.ts, nTs);
-    }
-    const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
-    const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
-    out.push({
-      id: `${P.session.slice(0, 8)}-${String(P.idx).padStart(3, '0')}`,
-      session: P.session, idx: P.idx, turns: turns.length, repo, ref,
-      p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
-      c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, cue: isCue(C.text), visible: minerVisible(C.text) },
-      ack: C.idx > P.idx + 1, n_ts: nTs, work, ...shas,
-      fix_lines: fixStat.lines, fix_files: fixStat.files, done_lines: doneStat.lines, done_files: doneStat.files,
-    });
-  }
-  return out;
+  return req.slice(0, -1).map((P, i) => candidate(turns, end, P, req[i + 1], false));
+}
+
+// The candidate for two named turns (their `n`) of one session, for a correction that came some requests
+// after what it corrects. Its label key is always id>C. Null when either turn is missing or out of order.
+function pairAt(file, pN, cN) {
+  const { turns, end } = parseSession(file);
+  const P = turns.find((t) => t.n === pN);
+  const C = turns.find((t) => t.n === cN);
+  return P && C && C.idx > P.idx ? candidate(turns, end, P, C, true) : null;
 }
 
 // Step 1: candidates from every transcript under root.
 function mine(root, { skip = [] } = {}) {
   return transcripts(root, skip).flatMap(triples);
 }
+
+// The label of a pair. Pairs are labelled by id; a pair whose C is a queued message or not the next request has
+// its own key (id>C), so a label written for another C never applies to it.
+const labelOf = (c, labels) => (labels || {})[c.key || c.id];
 
 const words = (text) => text.trim().split(/\s+/).filter(Boolean).length;
 
@@ -248,7 +294,7 @@ function rejectCommon(c, ctx) {
   if (!ctx.allowTemp && TEMP_DIR.test(c.repo.replace(/[^a-zA-Z0-9]/g, '-'))) return 'temp or bench dir';
   if (c.p.image) return 'P has an image';
   if (words(c.p.text) > 80) return 'P over 80 words';
-  if (!standalone(c.p.text)) return 'P not standalone';
+  if (!standalone(c.p.text) && !(c.context || []).length) return 'P not standalone';
   if ((ctx.used || []).some((u) => u.session === c.session && u.idx >= c.idx - 3 && u.idx <= c.c.idx + 3)) return 'within 3 turns of an existing case';
   if (!c.base) return 'no base commit';
   return null;
@@ -263,8 +309,9 @@ function rejectCorrection(c, ctx) {
   if (c.fix === c.base) return 'fix equals base';
   if (!c.work) return 'no assistant edits after P';
   if (c.fix_lines === null || c.fix_lines === 0) return 'empty base..fix';
-  if (c.fix_lines > 300) return 'base..fix over 300 lines';
-  const label = (ctx.labels || {})[c.id];
+  const max = ctx.maxLines || 300;
+  if (c.fix_lines > max) return `base..fix over ${max} lines`;
+  const label = labelOf(c, ctx.labels);
   if (!label) return 'unlabelled';
   if (label.label !== 'correction') return `C is not a correction (${label.label})`;
   return leaks(c, ctx.rules || [], ctx.visible || []);
@@ -280,7 +327,7 @@ function rejectControl(c, ctx) {
   if (!c.ack) return 'no go-ahead after the request';
   if (c.done_lines === null || c.done_lines === 0) return 'empty base..done';
   if (c.done_lines > 300) return 'base..done over 300 lines';
-  const label = (ctx.labels || {})[c.id];
+  const label = labelOf(c, ctx.labels);
   if (!label) return 'unlabelled';
   if (label.label !== 'accepted') return `not an accepted request (${label.label})`;
   return null;
@@ -290,7 +337,7 @@ function rejectControl(c, ctx) {
 // labelled a correction, the two are one case: the first keeps its P and C, takes the later fix, and the later
 // pair is dropped. Repeats down the chain. Returns the merged candidates and the ids absorbed into each.
 function chain(cands, labels) {
-  const isCorr = (c) => !!c && (labels[c.id] || {}).label === 'correction';
+  const isCorr = (c) => !!c && (labelOf(c, labels) || {}).label === 'correction';
   const at = new Map(cands.map((c) => [`${c.session}|${c.idx}`, c]));
   const absorbed = new Map();
   const out = [];
@@ -349,22 +396,51 @@ function sample(cands, { seed = 10, quotas = DEFAULT_QUOTAS, skip = [], avoid = 
   return picked;
 }
 
+// Rebuilds a state the history does not hold as one commit: a scratch clone at base with the given commits
+// cherry-picked in order. Returns the patch from base (binary-safe), or the pick that did not apply.
+// The source repo is only cloned from.
+function rebuild(repo, base, picks) {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'heldout-rebuild-'));
+  const work = path.join(parent, 'work');
+  try {
+    const run = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 1 << 26 });
+    if (run('clone', '--quiet', repo, work).status !== 0) return { error: 'clone failed' };
+    const g = (...args) => run('-C', work, '-c', 'user.name=heldout', '-c', 'user.email=heldout@example.com', ...args);
+    if (g('checkout', '--quiet', base).status !== 0) return { error: `no base ${base}` };
+    for (const sha of picks) {
+      if (g('cherry-pick', '--allow-empty', sha).status !== 0) return { error: `${sha} does not apply` };
+    }
+    const patch = g('diff', '--binary', base, 'HEAD').stdout;
+    return { patch, ...diffStat(work, base, 'HEAD') };
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+}
+
 const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+// prompt.txt: the request, verbatim. When it does not stand alone, the user turns before it (c.context,
+// oldest first, verbatim) go in front, a blank line between.
+const promptText = (c) => [...(c.context || []), c.p.text].join('\n\n');
 
 // Step 4: the mechanical files of a case. accept.sh and solve-notes.md are written by hand afterwards.
 // wrong.sh restores the last commit before C, the state the correction reacted to; the first commit after P
-// is kept in case.json as first_after_p.
+// is kept in case.json as first_after_p. A rebuilt state (c.fix_patch, c.wrong_patch: patches from base) has
+// no commit of its own: the patch is stored beside the script that applies it and the picks go in case.json.
 function writeCase(dir, c, { deps } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   const fix = c.control ? c.done : c.fix;
   const wrong = c.control ? null : c.done;
   const put = (name, body, mode) => fs.writeFileSync(path.join(dir, name), body, mode ? { mode } : undefined);
-  put('prompt.txt', `${c.p.text}\n`);
+  const checkout = (sha) => `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${sha} -- .\n`;
+  const apply = (file) => `#!/bin/sh\nset -e\ngit -C "$1" apply --whitespace=nowarn "$(cd "$(dirname "$0")" && pwd)/${file}"\n`;
+  put('prompt.txt', `${promptText(c)}\n`);
   if (!c.control) put('followup.txt', `${c.c.text}\n`);
-  put('case.json', `${JSON.stringify({ repo: c.repo, base: c.base, wrong, first_after_p: c.wrong, fix, session: c.session, ts: c.p.ts, control: !!c.control, kind: c.kind || null, ui: !!c.ui }, null, 2)}\n`);
+  const meta = { repo: c.repo, base: c.base, wrong: c.wrong_patch ? null : wrong, first_after_p: c.wrong, fix: c.fix_patch ? null : fix, session: c.session, ts: c.p.ts, control: !!c.control, kind: c.kind || null, ui: !!c.ui };
+  if (c.rebuilt) meta.rebuilt = c.rebuilt;
+  if ((c.context || []).length) meta.context_turns = c.context.length;
+  put('case.json', `${JSON.stringify(meta, null, 2)}\n`);
   put('setup.sh', `#!/bin/sh\nset -e\ngit clone --quiet ${sq(c.repo)} "$1"\ngit -C "$1" checkout --quiet ${c.base}\n${deps ? `sh ${sq(deps)} ${sq(c.repo)} "$1"\n` : ''}`, 0o755);
-  put('solve.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${fix} -- .\n`, 0o755);
-  if (wrong && wrong !== fix) put('wrong.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${wrong} -- .\n`, 0o755);
+  if (c.fix_patch) { put('fix.patch', c.fix_patch); put('solve.sh', apply('fix.patch'), 0o755); } else put('solve.sh', checkout(fix), 0o755);
+  if (c.wrong_patch) { put('wrong.patch', c.wrong_patch); put('wrong.sh', apply('wrong.patch'), 0o755); } else if (wrong && wrong !== fix) put('wrong.sh', checkout(wrong), 0o755);
 }
 
 // Step 6: the dry check of one case in fresh clones. A case is good only when accept fails at base,
@@ -429,7 +505,7 @@ function context(cands, f) {
   const rules = f.rules && fs.existsSync(f.rules) ? JSON.parse(fs.readFileSync(f.rules, 'utf8')) : [];
   const labels = f.labels && fs.existsSync(f.labels) ? JSON.parse(fs.readFileSync(f.labels, 'utf8')) : {};
   const visible = cands.filter((c) => c.c.visible).map((c) => ({ session: c.session, idx: c.c.idx, text: c.c.text }));
-  return { rules, labels, visible, used: f.existing ? usedTurns(cands, f.existing) : [], skipRepos: f['skip-repos'] ? String(f['skip-repos']).split(',') : [], allowTemp: !!f['allow-temp'] };
+  return { rules, labels, visible, used: f.existing ? usedTurns(cands, f.existing) : [], skipRepos: f['skip-repos'] ? String(f['skip-repos']).split(',') : [], allowTemp: !!f['allow-temp'], maxLines: f['max-lines'] ? parseInt(f['max-lines'], 10) : 300 };
 }
 
 // Steps 2 and 3 for both kinds; returns the picks and every reject with its reason.
@@ -453,6 +529,29 @@ function select(cands, ctx, { seed = 10, controls = 3, skip = [], quotas } = {})
   return { picked, controls: ctl, eligible: ok.length, eligibleControls: okCtl.length, rejects };
 }
 
+// A correction case the history does not hold as base, wrong and fix in a row: the request and the correction
+// are named turns, wrong and fix are commits picked onto base in a scratch clone (fix on top of wrong), and
+// `context` earlier user turns go in front of the request. The same criteria as any correction case then apply.
+// spec: { name, session, p, c, context, wrong: [sha], fix: [sha] }. Returns { name, cand } or { name, why }.
+function recoverCase(files, spec, ctx) {
+  const name = spec.name;
+  const file = files.find((x) => path.basename(x, '.jsonl') === spec.session);
+  if (!file) return { name, why: 'no transcript for the session' };
+  const c = pairAt(file, spec.p, spec.c);
+  if (!c) return { name, why: 'no such turns' };
+  if (!c.repo || !c.base) return { name, why: rejectCommon(c, ctx) || 'no base commit' };
+  const before = parseSession(file).turns.slice(Math.max(0, c.idx - (spec.context || 0)), c.idx);
+  if (before.some((t) => t.image)) return { name, why: 'a context turn has an image' };
+  const picks = spec.wrong || [];
+  const wrong = picks.length ? rebuild(c.repo, c.base, picks) : null;
+  const fix = rebuild(c.repo, c.base, [...picks, ...(spec.fix || [])]);
+  const error = (wrong && wrong.error) || fix.error;
+  if (error) return { name, why: `rebuild: ${error}` };
+  Object.assign(c, { context: before.map((t) => t.text), fix: 'rebuilt', done: wrong ? 'rebuilt' : null, fix_patch: fix.patch, wrong_patch: wrong ? wrong.patch : null, fix_lines: fix.lines, fix_files: fix.files, rebuilt: { wrong: picks, fix: spec.fix || [] }, kind: kindOf(c.c.text), ui: isUi(fix.files) });
+  const why = rejectCorrection(c, ctx);
+  return why ? { name, why } : { name, cand: c };
+}
+
 function main(argv) {
   const f = parseArgs(argv);
   const cmd = f._[0] || 'mine';
@@ -473,6 +572,15 @@ function main(argv) {
     sel.picked.forEach((c, i) => writeCase(path.join(f.out, name('ho', i)), c, { deps: f.deps }));
     sel.controls.forEach((c, i) => writeCase(path.join(f.out, name('ho-ctl', i)), c, { deps: f.deps }));
     console.log(`${sel.picked.length} correction cases and ${sel.controls.length} controls -> ${f.out}`);
+  } else if (cmd === 'recover') {
+    const cands = f.candidates ? readJsonl(f.candidates) : [];
+    const files = transcripts(f.root || path.join(os.homedir(), '.claude', 'projects'), f.skip ? String(f.skip).split(',') : []);
+    const res = JSON.parse(fs.readFileSync(f.spec, 'utf8')).map((spec) => recoverCase(files, spec, context(cands, f)));
+    for (const r of res) {
+      if (r.cand) writeCase(path.join(f.out, r.name), r.cand, { deps: f.deps });
+      console.log(`${r.name}: ${r.cand ? `written, ${r.cand.fix_lines} lines from base` : `rejected, ${r.why}`}`);
+    }
+    process.exitCode = res.every((r) => r.cand) ? 0 : 1;
   } else if (cmd === 'verify') {
     const root = f.dir;
     const names = f.cases ? String(f.cases).split(',') : fs.readdirSync(root).filter((c) => fs.existsSync(path.join(root, c, 'accept.sh'))).sort();
@@ -490,5 +598,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, candidate, triples, pairAt, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, promptText, writeCase, verifyCase, manifest, checkManifest, context, select, recoverCase, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));

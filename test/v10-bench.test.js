@@ -142,6 +142,53 @@ test('parseSession: user text turns in order with the work that followed; harnes
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+const queuedLine = (min, prompt, kind = 'human') => ({ type: 'attachment', sessionId: SID, timestamp: T(min), cwd: '/r', gitBranch: 'main', attachment: { type: 'queued_command', prompt, origin: { kind } } });
+
+test('parseSession: a message typed while the agent was busy is a turn, once, with its own id space', () => {
+  const dir = tmp('queued');
+  try {
+    const file = path.join(dir, 's.jsonl');
+    fs.writeFileSync(file, [
+      user(1, 'add a late fee to the yearly plan', '/r'),
+      queuedLine(2, 'no late fee on the free plan'),
+      tool(3, 'Edit', { file_path: 'fee.txt' }),
+      queuedLine(4, '<task-notification>done</task-notification>', 'task'),
+      queuedLine(5, [{ type: 'image', source: {} }, { type: 'text', text: 'this one is cut off' }]),
+      queuedLine(6, 'make the header darker please'),
+      user(7, 'make the header darker please', '/r'),
+      user(8, 'thanks, now the footer as well', '/r'),
+    ].map((l) => JSON.stringify(l)).join('\n'));
+    const { turns } = mc.parseSession(file);
+    assert.deepStrictEqual(turns.map((t) => [t.idx, t.n, !!t.queued, t.text]), [
+      [0, '000', false, 'add a late fee to the yearly plan'],
+      [1, 'q000', true, 'no late fee on the free plan'],
+      [2, 'q001', true, 'this one is cut off'],
+      [3, '001', false, 'make the header darker please'],
+      [4, '002', false, 'thanks, now the footer as well'],
+    ]);
+    assert.strictEqual(turns[1].edits, 1);
+    assert.strictEqual(turns[2].image, true);
+    // a pair that ends in a queued turn carries that turn in its label key; a pair of typed turns does not
+    assert.deepStrictEqual(mc.triples(file).map((c) => c.key), ['11111111-000>q000', '11111111-q000>q001', undefined, undefined]);
+    assert.strictEqual(turns[1].cwd, '/r');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('parseSession: a leading harness reminder is dropped, the typed text kept; a brief from another session is not a turn', () => {
+  const dir = tmp('reminder');
+  try {
+    const file = path.join(dir, 's.jsonl');
+    const rem = '<system-reminder>\nLinked sessions now: a (idle).\n</system-reminder>\n\n';
+    fs.writeFileSync(file, [
+      user(1, `${rem}Task (from the session that started this one):\nBuild the shop.`, '/r'),
+      user(2, `${rem}\nthe cards are still off centre`, '/r'),
+      user(3, rem, '/r'),
+      user(4, 'something with a <system-reminder>x</system-reminder> inside', '/r'),
+    ].map((l) => JSON.stringify(l)).join('\n'));
+    assert.deepStrictEqual(mc.parseSession(file).turns.map((t) => [t.n, t.text]), [['r000', 'the cards are still off centre']]);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('transcripts skips temp project dirs', () => {
   const fx = fixture();
   try {
@@ -183,6 +230,19 @@ test('a fixture transcript and repo yield the expected triple', () => {
     assert.strictEqual(c.fix_lines, 2);
     assert.ok(c.work >= 2);
     assert.strictEqual(all[1].fix, null);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test('pairAt: two named turns give a candidate with its own label key', () => {
+  const fx = fixture();
+  try {
+    const c = mc.pairAt(fx.file, '000', '003');
+    assert.deepStrictEqual([c.id, c.key, c.base, c.done], ['11111111-000', '11111111-000>003', fx.sha.base, fx.sha.fix]);
+    assert.strictEqual(c.c.text, 'add a dark mode toggle to the header please');
+    assert.strictEqual(mc.pairAt(fx.file, '003', '000'), null);
+    assert.strictEqual(mc.pairAt(fx.file, '000', '099'), null);
+    // the consecutive pair is unchanged and keeps the plain id as its key
+    assert.strictEqual(mc.triples(fx.file)[0].key, undefined);
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
@@ -237,6 +297,22 @@ test('criteria: each mechanical reject has its reason', () => {
   assert.strictEqual(mc.rejectControl(ok, ctl), null);
   assert.strictEqual(mc.rejectControl({ ...ok, ack: false }, ctl), 'no go-ahead after the request');
   assert.strictEqual(mc.rejectControl(cand({ ack: true }), ctl), 'next turn has a correction cue');
+});
+
+test('the diff limit is 300 lines unless the context raises it', () => {
+  const labels = { 'aaaaaaaa-001': { label: 'correction' } };
+  const big = cand({ fix_lines: 450 });
+  assert.strictEqual(mc.rejectCorrection(big, { labels }), 'base..fix over 300 lines');
+  assert.strictEqual(mc.rejectCorrection(big, { labels, maxLines: 600 }), null);
+  assert.strictEqual(mc.rejectCorrection(cand({ fix_lines: 601 }), { labels, maxLines: 600 }), 'base..fix over 600 lines');
+});
+
+test('labelOf: a label written for the next typed turn does not apply once C is a queued message', () => {
+  const labels = { 'aaaaaaaa-001': { label: 'correction' }, 'aaaaaaaa-001>q002': { label: 'new-request' } };
+  assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001' }, labels).label, 'correction');
+  assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001', key: 'aaaaaaaa-001>q002' }, labels).label, 'new-request');
+  assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001', key: 'aaaaaaaa-001>q009' }, labels), undefined);
+  assert.strictEqual(mc.rejectCorrection(cand({ key: 'aaaaaaaa-001>q009' }), { labels: { 'aaaaaaaa-001': { label: 'correction' } } }), 'unlabelled');
 });
 
 test('chain: a corrected correction becomes one case with the later fix', () => {
@@ -294,6 +370,22 @@ test('sample: fewer survivors than the target ships fewer, and neighbours in one
   assert.ok(got.includes('c'));
 });
 
+test('rebuild: commits picked onto base in a scratch clone give a patch; a pick that does not apply is named', () => {
+  const fx = fixture();
+  try {
+    const head = spawnSync('git', ['-C', fx.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
+    const r = mc.rebuild(fx.repo, fx.sha.base, [fx.sha.wrong, fx.sha.fix]);
+    assert.strictEqual(r.error, undefined);
+    assert.match(r.patch, /^-old$/m);
+    assert.match(r.patch, /^\+right$/m);
+    assert.deepStrictEqual([r.lines, r.files], [2, ['fee.txt']]);
+    assert.strictEqual(mc.rebuild(fx.repo, fx.sha.base, [fx.sha.fix]).error, `${fx.sha.fix} does not apply`);
+    // nothing written to the source repo
+    assert.strictEqual(spawnSync('git', ['-C', fx.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head);
+    assert.strictEqual(spawnSync('git', ['-C', fx.repo, 'status', '--porcelain'], { encoding: 'utf8' }).stdout, '');
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
 // A case dir over the fixture repo; accept passes when fee.txt holds one of `passing`.
 function caseDir(fx, passing) {
   const dir = path.join(fx.dir, `case-${passing.join('-')}`);
@@ -314,6 +406,49 @@ test('writeCase writes the mechanical files; the dry check passes a good case', 
     assert.deepStrictEqual([r.base_fails, r.wrong_fails, r.fix_passes, r.ok], [true, true, true, true]);
     // the source repo is only cloned from
     assert.strictEqual(spawnSync('git', ['-C', fx.repo, 'status', '--porcelain'], { encoding: 'utf8' }).stdout, '');
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test('writeCase: rebuilt states are stored as patches from base and pass the dry check; context turns lead the prompt', () => {
+  const fx = fixture();
+  try {
+    const dir = path.join(fx.dir, 'case-rebuilt');
+    const wrong = mc.rebuild(fx.repo, fx.sha.base, [fx.sha.wrong]);
+    const fix = mc.rebuild(fx.repo, fx.sha.base, [fx.sha.wrong, fx.sha.fix]);
+    mc.writeCase(dir, { repo: fx.repo, base: fx.sha.base, wrong: null, done: null, fix: null, wrong_patch: wrong.patch, fix_patch: fix.patch, rebuilt: { wrong: [fx.sha.wrong], fix: [fx.sha.wrong, fx.sha.fix] }, context: ['the fee page first', 'and the yearly plan'], session: SID, p: { text: 'make it five', ts: T(10) }, c: { text: 'C text' }, kind: 'narrow', ui: false });
+    fs.writeFileSync(path.join(dir, 'accept.sh'), '#!/bin/sh\ncd "$1" || exit 1\ngrep -qx right fee.txt\n', { mode: 0o755 });
+    assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['accept.sh', 'case.json', 'fix.patch', 'followup.txt', 'prompt.txt', 'setup.sh', 'solve.sh', 'wrong.patch', 'wrong.sh']);
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8'), 'the fee page first\n\nand the yearly plan\n\nmake it five\n');
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, 'case.json'), 'utf8'));
+    assert.deepStrictEqual([meta.wrong, meta.fix, meta.context_turns, meta.rebuilt.fix.length], [null, null, 2, 2]);
+    const r = mc.verifyCase(dir);
+    assert.deepStrictEqual([r.base_fails, r.wrong_fails, r.fix_passes, r.ok], [true, true, true, true]);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test('recoverCase: named turns and picked commits make a case under the usual criteria', () => {
+  const fx = fixture();
+  try {
+    const spec = { name: 'ho-09', session: SID, p: '000', c: '002', context: 0, wrong: [fx.sha.wrong], fix: [fx.sha.fix] };
+    const labels = { '11111111-000>002': { label: 'correction' } };
+    const ctx = { labels, allowTemp: true, maxLines: 600 };
+    const r = mc.recoverCase([fx.file], spec, ctx);
+    assert.strictEqual(r.why, undefined);
+    assert.deepStrictEqual([r.cand.key, r.cand.fix_lines, r.cand.rebuilt.fix, r.cand.context], ['11111111-000>002', 2, [fx.sha.fix], []]);
+    const dir = path.join(fx.dir, 'ho-09');
+    mc.writeCase(dir, r.cand);
+    fs.writeFileSync(path.join(dir, 'accept.sh'), '#!/bin/sh\ncd "$1" || exit 1\ngrep -qx right fee.txt\n', { mode: 0o755 });
+    assert.strictEqual(mc.verifyCase(dir).ok, true);
+    // the same checks as any correction case
+    assert.strictEqual(mc.recoverCase([fx.file], spec, { allowTemp: true }).why, 'unlabelled');
+    assert.strictEqual(mc.recoverCase([fx.file], spec, { labels: { '11111111-000>002': { label: 'new-request' } }, allowTemp: true }).why, 'C is not a correction (new-request)');
+    assert.strictEqual(mc.recoverCase([fx.file], { ...spec, wrong: [], fix: [] }, ctx).why, 'empty base..fix');
+    assert.match(mc.recoverCase([fx.file], { ...spec, wrong: [], fix: [fx.sha.fix] }, ctx).why, /^rebuild: .* does not apply$/);
+    assert.strictEqual(mc.recoverCase([fx.file], { ...spec, c: '099' }, ctx).why, 'no such turns');
+    assert.strictEqual(mc.recoverCase([], spec, ctx).why, 'no transcript for the session');
+    // a request that does not stand alone is admitted with the turn before it as context
+    const late = mc.recoverCase([fx.file], { ...spec, p: '002', c: '003', context: 1, wrong: [], fix: [fx.sha.fix] }, { labels: { '11111111-002>003': { label: 'correction' } }, allowTemp: true });
+    assert.deepStrictEqual([late.cand.context, late.cand.wrong_patch], [['Deploy to live'], null]);
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
@@ -441,7 +576,7 @@ test('the committed held-out manifest holds only case ids, file names and sha256
     assert.match(id, /^ho-(ctl-)?\d\d$/);
     for (const f of ['setup.sh', 'accept.sh', 'solve.sh', 'prompt.txt', 'case.json']) assert.ok(files[f], `${id} ${f}`);
     for (const [name, h] of Object.entries(files)) {
-      assert.match(name, /^[a-z-]+\.(sh|txt|json|md|mts|mjs)$/);
+      assert.match(name, /^[a-z-]+\.(sh|txt|json|md|mts|mjs|patch)$/);
       assert.match(h, /^[0-9a-f]{64}$/);
     }
   }

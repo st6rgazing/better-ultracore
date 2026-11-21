@@ -24,6 +24,32 @@
       "solve.sh": "03c091372a28e62bda7b4af95357f0dc42e067a5460d82877a8075a598944f54",
       "wrong.sh": "7d52f602be90fa7291f8c1d199aff2731dda8d932d36154c790fa7dca62dd0eb"
     },
+    "ho-03": {
+      "accept.sh": "036df0fdf293f638dd9cb6c61495c797497801302b189f20676e24acecfaabf9",
+      "case.json": "9f81d220130352ed8cdd1d5d5e9692c69d76987dc854657a1309c307cee92278",
+      "fix.patch": "6d79ec6679ab5516b484cd039b2b5d56663cefe9208ad6d57c21336727fe61b6",
+      "followup.txt": "4d79a5ba9777a6d84293c8d3a6e9eb5e96c27bc7a042edbd7ee3a8eb1ef46a9a",
+      "probe.mjs": "4be8ab2971f6fafc2c0de3f9a55bb3191f1cf42f560e0086497a47847cc49fd1",
+      "prompt.txt": "325f655f9bd8837a28c96f899d3088c642c4485f504d5292c67ec4a493aa5e56",
+      "setup.sh": "3392518f14ac935e1ec93ebe24523b30693ad3aadcba123637dd7439040e0145",
+      "solve-notes.md": "c3c4a508d36e64744dae87f0d8f1c1e76cf4b76ffdd4b650a26fccc90c664a96",
+      "solve.sh": "8f4b0058c7c0592a878f54c0433cf5e63299b875efe0db933f4a13d99d0d2dc4",
+      "wrong.patch": "490fe80822d8c3599f842dfe17ec35f7d147eb5dcf481a836f7d900dad8effa7",
+      "wrong.sh": "ea540b7ad226325a20113b23b84e12dab0631ffb0678117c779bdf98b1b0d90b"
+    },
+    "ho-04": {
+      "accept.sh": "1fe631b27f82d4e9345a0863c87bb4a24b93d3a8b210031edca063eff576c14b",
+      "case.json": "25abfe84c37ddd6001eee57046b3218d8c2e352a8fbb78a0d60592fdf3d103d1",
+      "fix.patch": "d22393b7f2d3053bc0d6b3395fe0aef1a5b0c1d6a0afb8b91f295eaf7dc296b8",
+      "followup.txt": "488a9b6f35802b032bd7009bb5ccd84060a87f7425755e52e095d9d4bcf49831",
+      "probe.mjs": "6345a6f10ed642497a2fe323899ad9a5eec57165f0b86797d230ff00d2ab1a31",
+      "prompt.txt": "18f328c36d7b1b921ba3759066a55cfdb24bcde7e1c865069c6bf7c166bf2c33",
+      "setup.sh": "7421b230b6c996e2e55c1d6da77b848aa8d9498c41d454b280cbfa57822f2673",
+      "solve-notes.md": "e80bc4c20e1c298ed54546799bba59cc973d0e848b399dc552fed00c0bb62eeb",
+      "solve.sh": "8f4b0058c7c0592a878f54c0433cf5e63299b875efe0db933f4a13d99d0d2dc4",
+      "wrong.patch": "214d3fefb9854f37946fcd6ac69b05a7769fc3d751387c00d8152eae87d37e7f",
+      "wrong.sh": "ea540b7ad226325a20113b23b84e12dab0631ffb0678117c779bdf98b1b0d90b"
+    },
     "ho-ctl-01": {
       "accept.sh": "6177bd37137d78c79507820dff9b67d3cb3c955475cac936946753cce1c818dd",
       "case.json": "3efcbd6c21f5d081da78bc776ea00fe07ed59a7bf806f39936925b73daece54f",
