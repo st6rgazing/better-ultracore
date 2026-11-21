@@ -222,3 +222,12 @@ test('handsoff.set stores the setting and active follows mode', () => {
   assert.strictEqual(handsoff.mode('r').mode, 'auto-idle');
   assert.throws(() => handsoff.set('r', 'maybe'), /on, off or auto/);
 });
+
+test('store.hash is 12 hex of the redacted text and stable under redaction', () => {
+  assert.match(store.hash('no, only the header'), /^[0-9a-f]{12}$/);
+  assert.strictEqual(store.hash('  no, only the header '), store.hash('no, only the header'));
+  assert.notStrictEqual(store.hash('no, only the header'), store.hash('no, only the footer'));
+  const { redact } = require('../lib/prefs/redact');
+  const secret = 'no, the key is sk-ant-REDACTED';
+  assert.strictEqual(store.hash(secret), store.hash(redact(secret)));
+});
