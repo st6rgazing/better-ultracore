@@ -294,7 +294,7 @@ function rejectCommon(c, ctx) {
   if (!ctx.allowTemp && TEMP_DIR.test(c.repo.replace(/[^a-zA-Z0-9]/g, '-'))) return 'temp or bench dir';
   if (c.p.image) return 'P has an image';
   if (words(c.p.text) > 80) return 'P over 80 words';
-  if (!standalone(c.p.text)) return 'P not standalone';
+  if (!standalone(c.p.text) && !(c.context || []).length) return 'P not standalone';
   if ((ctx.used || []).some((u) => u.session === c.session && u.idx >= c.idx - 3 && u.idx <= c.c.idx + 3)) return 'within 3 turns of an existing case';
   if (!c.base) return 'no base commit';
   return null;
@@ -529,6 +529,29 @@ function select(cands, ctx, { seed = 10, controls = 3, skip = [], quotas } = {})
   return { picked, controls: ctl, eligible: ok.length, eligibleControls: okCtl.length, rejects };
 }
 
+// A correction case the history does not hold as base, wrong and fix in a row: the request and the correction
+// are named turns, wrong and fix are commits picked onto base in a scratch clone (fix on top of wrong), and
+// `context` earlier user turns go in front of the request. The same criteria as any correction case then apply.
+// spec: { name, session, p, c, context, wrong: [sha], fix: [sha] }. Returns { name, cand } or { name, why }.
+function recoverCase(files, spec, ctx) {
+  const name = spec.name;
+  const file = files.find((x) => path.basename(x, '.jsonl') === spec.session);
+  if (!file) return { name, why: 'no transcript for the session' };
+  const c = pairAt(file, spec.p, spec.c);
+  if (!c) return { name, why: 'no such turns' };
+  if (!c.repo || !c.base) return { name, why: rejectCommon(c, ctx) || 'no base commit' };
+  const before = parseSession(file).turns.slice(Math.max(0, c.idx - (spec.context || 0)), c.idx);
+  if (before.some((t) => t.image)) return { name, why: 'a context turn has an image' };
+  const picks = spec.wrong || [];
+  const wrong = picks.length ? rebuild(c.repo, c.base, picks) : null;
+  const fix = rebuild(c.repo, c.base, [...picks, ...(spec.fix || [])]);
+  const error = (wrong && wrong.error) || fix.error;
+  if (error) return { name, why: `rebuild: ${error}` };
+  Object.assign(c, { context: before.map((t) => t.text), fix: 'rebuilt', done: wrong ? 'rebuilt' : null, fix_patch: fix.patch, wrong_patch: wrong ? wrong.patch : null, fix_lines: fix.lines, fix_files: fix.files, rebuilt: { wrong: picks, fix: spec.fix || [] }, kind: kindOf(c.c.text), ui: isUi(fix.files) });
+  const why = rejectCorrection(c, ctx);
+  return why ? { name, why } : { name, cand: c };
+}
+
 function main(argv) {
   const f = parseArgs(argv);
   const cmd = f._[0] || 'mine';
@@ -549,6 +572,15 @@ function main(argv) {
     sel.picked.forEach((c, i) => writeCase(path.join(f.out, name('ho', i)), c, { deps: f.deps }));
     sel.controls.forEach((c, i) => writeCase(path.join(f.out, name('ho-ctl', i)), c, { deps: f.deps }));
     console.log(`${sel.picked.length} correction cases and ${sel.controls.length} controls -> ${f.out}`);
+  } else if (cmd === 'recover') {
+    const cands = f.candidates ? readJsonl(f.candidates) : [];
+    const files = transcripts(f.root || path.join(os.homedir(), '.claude', 'projects'), f.skip ? String(f.skip).split(',') : []);
+    const res = JSON.parse(fs.readFileSync(f.spec, 'utf8')).map((spec) => recoverCase(files, spec, context(cands, f)));
+    for (const r of res) {
+      if (r.cand) writeCase(path.join(f.out, r.name), r.cand, { deps: f.deps });
+      console.log(`${r.name}: ${r.cand ? `written, ${r.cand.fix_lines} lines from base` : `rejected, ${r.why}`}`);
+    }
+    process.exitCode = res.every((r) => r.cand) ? 0 : 1;
   } else if (cmd === 'verify') {
     const root = f.dir;
     const names = f.cases ? String(f.cases).split(',') : fs.readdirSync(root).filter((c) => fs.existsSync(path.join(root, c, 'accept.sh'))).sort();
@@ -566,5 +598,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, candidate, triples, pairAt, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, promptText, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, candidate, triples, pairAt, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, promptText, writeCase, verifyCase, manifest, checkManifest, context, select, recoverCase, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));

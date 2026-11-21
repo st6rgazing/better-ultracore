@@ -426,6 +426,32 @@ test('writeCase: rebuilt states are stored as patches from base and pass the dry
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('recoverCase: named turns and picked commits make a case under the usual criteria', () => {
+  const fx = fixture();
+  try {
+    const spec = { name: 'ho-09', session: SID, p: '000', c: '002', context: 0, wrong: [fx.sha.wrong], fix: [fx.sha.fix] };
+    const labels = { '11111111-000>002': { label: 'correction' } };
+    const ctx = { labels, allowTemp: true, maxLines: 600 };
+    const r = mc.recoverCase([fx.file], spec, ctx);
+    assert.strictEqual(r.why, undefined);
+    assert.deepStrictEqual([r.cand.key, r.cand.fix_lines, r.cand.rebuilt.fix, r.cand.context], ['11111111-000>002', 2, [fx.sha.fix], []]);
+    const dir = path.join(fx.dir, 'ho-09');
+    mc.writeCase(dir, r.cand);
+    fs.writeFileSync(path.join(dir, 'accept.sh'), '#!/bin/sh\ncd "$1" || exit 1\ngrep -qx right fee.txt\n', { mode: 0o755 });
+    assert.strictEqual(mc.verifyCase(dir).ok, true);
+    // the same checks as any correction case
+    assert.strictEqual(mc.recoverCase([fx.file], spec, { allowTemp: true }).why, 'unlabelled');
+    assert.strictEqual(mc.recoverCase([fx.file], spec, { labels: { '11111111-000>002': { label: 'new-request' } }, allowTemp: true }).why, 'C is not a correction (new-request)');
+    assert.strictEqual(mc.recoverCase([fx.file], { ...spec, wrong: [], fix: [] }, ctx).why, 'empty base..fix');
+    assert.match(mc.recoverCase([fx.file], { ...spec, wrong: [], fix: [fx.sha.fix] }, ctx).why, /^rebuild: .* does not apply$/);
+    assert.strictEqual(mc.recoverCase([fx.file], { ...spec, c: '099' }, ctx).why, 'no such turns');
+    assert.strictEqual(mc.recoverCase([], spec, ctx).why, 'no transcript for the session');
+    // a request that does not stand alone is admitted with the turn before it as context
+    const late = mc.recoverCase([fx.file], { ...spec, p: '002', c: '003', context: 1, wrong: [], fix: [fx.sha.fix] }, { labels: { '11111111-002>003': { label: 'correction' } }, allowTemp: true });
+    assert.deepStrictEqual([late.cand.context, late.cand.wrong_patch], [['Deploy to live'], null]);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
 test('the dry check rejects a case whose wrong passes, and one whose base passes', () => {
   const fx = fixture();
   try {
