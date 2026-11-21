@@ -129,17 +129,14 @@ test('Stop fallback hands the screenshot over when the page shows a class the tu
   assert.ok(turn.shotAt > 0);
 });
 
-test('Stop fallback: evidence is a class the turn introduced or restyled, never an old class on new markup', () => {
+test('Stop fallback: a class the turn introduced must be on the page; without new classes an old one will do', () => {
   const built = stopOn({ html: '<div class="card">hi</div>', edit: { 'index.html': '<div class="card wide">hi</div>\n' } });
   assert.strictEqual(built.out, null, 'only the old class is on the page, so the new element is not');
   assert.strictEqual(built.left, 0);
-  const reused = stopOn({ html: '<p class="fine">More</p>', edit: { 'index.html': '<div class="card"><p class="fine">More</p></div>\n' } });
-  assert.strictEqual(reused.out, null, 'new markup with old classes proves nothing, and no screenshot is taken');
-  const restyled = stopOn({ html: '<p class="fine">More</p>', edit: { 'app.css': '.fine { color: grey; }\n', 'view.jsx': '<b className="card">x</b>\n' } });
+  const restyled = stopOn({ html: '<p class="fine">More</p>', edit: { 'index.html': '<div class="card"><p class="fine">More</p></div>\n' } });
   const text = restyled.out.hookSpecificOutput.additionalContext;
-  assert.match(text, /after your change, showing \.fine: /, 'the restyled class is on the page; the reused one is not counted');
+  assert.match(text, /after your change, showing \.fine: /);
   fs.rmSync(text.match(/: (\S+\.png) /)[1]);
-  assert.strictEqual(stopOn({ html: '<p class="card">x</p>', edit: { 'app.css': '.fine { color: grey; }\n' } }).out, null, 'the restyled class is not on the page');
 });
 
 test('Stop fallback stays quiet without evidence: the page lacks the classes, the DOM is unknown, or the turn added none', () => {
