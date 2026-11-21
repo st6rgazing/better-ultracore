@@ -18,6 +18,8 @@ Live (spends real money, spawns `claude` directly; `BUC_CLAUDE_BIN` overrides th
 `--buc-home <dir>` seeds each buc run with a fresh copy of that rules dir (e.g. one containing `rules.json` copied from `bench/fixtures/`); without it the buc arm starts with an empty `BUC_HOME`. All flags are optional (defaults: all arms, all cases, `--n 1 --budget 1 --timeout-min 10`, output under `bench/results/<timestamp>.json`).
 Prints a markdown table per case x arm and writes the raw per-run JSON.
 
+`--exclude-rules-from self` scores each case without the rules listed in its own `exclude-rules.json` (an array of rule ids mined from that case's session), so a case is never helped by a rule that encodes its answer. `--exclude-rules-from caseA,caseB` drops those cases' lists from every run instead. The buc arm's copied `rules.json` and the `plain-claudemd` bullets are both filtered; the row records `excluded_rules`.
+
 `--cases` accepts names from `bench/cases` and `bench/private` (gitignored, may be absent). No-model check, listing the four arms and every case (setup + accept must fail, solve + accept must pass; cases without `solve.sh` are skipped for the solve half):
 
     node bench/run.js --dry
@@ -51,7 +53,7 @@ Each case dir has `setup.sh <dir>`, `prompt.txt`, `accept.sh <dir>` (exit 0 = pa
 After the run (`bench/sim-user.js`, deterministic, no model; accept output is never shown to the model):
 
 1. `accept.sh` passes: 0 interventions.
-2. Otherwise resume the same session (`claude -p --resume <session_id>`). If the last reply ends in a question the reply is "use your best reading of what I asked"; else round 1 sends the case's `followup.txt` (fallback "no, read what i asked again") and round 2 sends "no, read what i asked again". Each reply counts 1 intervention; accept is re-run after each.
+2. Otherwise resume the same session (`claude -p --resume <session_id>`). The first reply is the case's `followup.txt` when it has one, also when the agent asked a question, so a question never swallows the real correction. After that (or with no follow-up) a reply ending in a question gets "use your best reading of what I asked" and anything else gets "no, read what i asked again". Each reply counts 1 intervention; accept is re-run after each.
 3. At most 2 rounds.
 
 Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (all rounds), `num_turns`.
@@ -65,6 +67,8 @@ Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (a
 - `interventions`: 1 for `correction`, plus one per simulated-user reply (see above).
 - `first_try_pass` (always false for `correction`), `final_pass` (= `accept_pass`), `tokens_to_accept`, `ultra_active` (ultra arm only).
 - `source`: always `live`.
+- `rounds`: audit trail, one entry per agent call: `round`, `prompt` (what the user side sent, 400 chars), `reply_excerpt` (first 600 chars), `reply_tail` (last 300 of a longer reply), `accept_pass` (null when accept was not run after that call), `files_changed`, `lines_changed`, `patch` (cumulative since setup, 20000 chars), `exit`, `timed_out`, `total_cost_usd`.
+- `excluded_rules`: rule ids left out by `--exclude-rules-from`.
 
 ## Caveats
 
