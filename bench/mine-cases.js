@@ -224,4 +224,21 @@ function leaks(cand, rules, visible) {
   return null;
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks };
+// Sessions and turn positions already used by existing bench cases, found by exact prompt or follow-up text.
+function usedTurns(cands, caseRoot) {
+  const texts = new Set();
+  for (const c of fs.existsSync(caseRoot) ? fs.readdirSync(caseRoot) : []) {
+    for (const f of ['prompt.txt', 'followup.txt']) {
+      const p = path.join(caseRoot, c, f);
+      if (fs.existsSync(p)) texts.add(fs.readFileSync(p, 'utf8').trim());
+    }
+  }
+  const used = [];
+  for (const c of cands) {
+    if (texts.has(c.p.text.trim())) used.push({ session: c.session, idx: c.idx });
+    if (texts.has(c.c.text.trim())) used.push({ session: c.session, idx: c.c.idx });
+  }
+  return used;
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns };
