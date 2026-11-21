@@ -21,7 +21,7 @@ const dayOf = (ts) => String(ts || '').slice(0, 10);
 // What the hook would do with a turn: the follow-up pattern when one fires on a later turn, else the request pattern.
 function fired(text, hadPrev) {
   const c = hadPrev ? intent.readCorrection(text, true).pattern : '';
-  return c ? { followup: true, pattern: c } : { followup: false, pattern: intent.readIntent(text, { kind: promptKind(text), mode: 'self' }).pattern };
+  return c ? { followup: true, pattern: c } : { followup: false, pattern: intent.readIntent(text, { kind: promptKind(text), mode: 'self', retired: true }).pattern };
 }
 
 // Every usable turn of the sessions as an unlabelled row. A row is a follow-up when a correction pattern fires on
