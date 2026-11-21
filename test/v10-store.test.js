@@ -106,3 +106,12 @@ test('saveLastTurn keeps head and files, and a call without rules merges', () =>
   store.saveLastTurn('s2', { rules: [], repo: 'r1', ts: 7, head: 'h', files: {} });
   assert.deepStrictEqual(store.loadLastTurn('s2'), { rules: [], repo: 'r1', ts: 7, head: 'h', files: {} });
 });
+
+test('patchTurn merges v10 fields into the turn file and creates it when missing', () => {
+  fresh();
+  store.writeTurn('s1', { session_id: 's1', checks: ['typecheck'], intent: 'SELF' });
+  assert.deepStrictEqual(store.patchTurn('s1', { toolCalls: 3, shotAt: 9 }), { session_id: 's1', checks: ['typecheck'], intent: 'SELF', toolCalls: 3, shotAt: 9 });
+  assert.strictEqual(store.readTurn('s1').toolCalls, 3);
+  assert.deepStrictEqual(store.patchTurn('s2', { toolCalls: 1 }), { session_id: 's2', toolCalls: 1 });
+  assert.deepStrictEqual(store.readTurn('s2'), { session_id: 's2', toolCalls: 1 });
+});
