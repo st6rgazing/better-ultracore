@@ -46,6 +46,18 @@ const caseDir = (c) => caseDirs.get(c);
 const read = (c, f) => fs.readFileSync(path.join(caseDir(c), f), 'utf8').trim();
 const has = (c, f) => fs.existsSync(path.join(caseDir(c), f));
 
+// Leave-one-out: rule ids a run must not see. spec is 'self' (the case being run) or a comma list of case names;
+// each named case lists the rules mined from its own session in exclude-rules.json (an array of ids).
+function excludedIds(spec, c) {
+  if (!spec) return [];
+  const names = spec === 'self' ? [c] : String(spec).split(',').filter(Boolean);
+  const ids = names.flatMap((n) => {
+    if (!caseDir(n)) throw new Error(`unknown case: ${n}`);
+    return has(n, 'exclude-rules.json') ? JSON.parse(read(n, 'exclude-rules.json')) : [];
+  });
+  return [...new Set(ids)];
+}
+
 // Sum tokens across models: input includes cache read + creation.
 function sumTokens(modelUsage, usage) {
   const t = { input: 0, output: 0 };
@@ -129,14 +141,42 @@ function patchOf(dir, preUntracked = [], base) {
   if (fresh.length) git('add', '-N', '--', ...fresh);
   const stat = git('diff', '--numstat', root).trim().split('\n').filter(Boolean)
     .map((l) => { const [a, d, f] = l.split('\t'); return { file: f, added: +a || 0, deleted: +d || 0 }; });
-  return { root, stat, patch: git('diff', root).slice(0, 20000) };
+  const patch = git('diff', root).slice(0, 20000);
+  // Drop the intent-to-add entries again so a mid-run snapshot leaves the index as the agent left it.
+  if (fresh.length) git('reset', '-q', '--', ...fresh);
+  return { root, stat, patch };
+}
+
+// Audit entry for one agent call: what the user said, what came back, and the repo state right after it.
+// pass is null when accept was not run after this call; the patch is cumulative since setup.
+function roundEntry(round, prompt, run, pass, diff) {
+  const reply = typeof run.result === 'string' ? run.result : null;
+  return {
+    round, prompt: String(prompt || '').slice(0, 400),
+    reply_excerpt: reply === null ? null : reply.slice(0, 600),
+    reply_tail: reply !== null && reply.length > 600 ? reply.slice(-300) : null,
+    accept_pass: pass,
+    files_changed: diff.stat.map((x) => x.file),
+    lines_changed: diff.stat.reduce((n, x) => n + x.added + x.deleted, 0),
+    patch: diff.patch,
+    exit: run.exit ?? null, timed_out: !!run.timed_out, total_cost_usd: run.total_cost_usd ?? null,
+  };
+}
+
+// Rewrites a rules.json without the given ids; returns the ids it removed.
+function dropRules(file, ids) {
+  if (!ids.length || !fs.existsSync(file)) return [];
+  const rules = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const gone = rules.filter((r) => ids.includes(r.id)).map((r) => r.id);
+  if (gone.length) fs.writeFileSync(file, `${JSON.stringify(rules.filter((r) => !ids.includes(r.id)), null, 2)}\n`);
+  return gone;
 }
 
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
-function writeClaudeMd(dir, bucHome) {
+function writeClaudeMd(dir, bucHome, exclude = []) {
   const src = bucHome && fs.existsSync(path.join(bucHome, 'rules.json')) ? path.join(bucHome, 'rules.json') : RULES;
-  const rules = JSON.parse(fs.readFileSync(src, 'utf8'));
+  const rules = JSON.parse(fs.readFileSync(src, 'utf8')).filter((r) => !exclude.includes(r.id));
   const file = path.join(dir, 'CLAUDE.md');
   const tracked = spawnSync('git', ['-C', dir, 'ls-files', '--error-unmatch', 'CLAUDE.md']).status === 0;
   fs.appendFileSync(file, `\n# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
@@ -150,21 +190,28 @@ function liveRun(c, arm, rep, o) {
   try {
     const s = sh(path.join(caseDir(c), 'setup.sh'), dir);
     if (s.status !== 0) throw new Error(`setup failed for ${c}: ${s.stderr}`);
-    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome);
+    const exclude = excludedIds(o.excludeFrom, c);
+    if (ARMS[arm].claudeMd) writeClaudeMd(dir, o.bucHome, exclude);
     // Each buc run gets its own copy of the seeded rules so runs never share learned state.
     const env = { ...process.env };
     if (ARMS[arm].bucHome) {
       env.BUC_HOME = path.join(parent, 'buc-home');
       if (o.bucHome) fs.cpSync(o.bucHome, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
+      dropRules(path.join(env.BUC_HOME, 'rules.json'), exclude);
     }
     const prompt = read(c, 'prompt.txt');
     const base = (spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim();
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
-    const call = (p, extra = {}) => claudeCall(p, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env, ...extra });
+    const sent = [];
+    const call = (p, extra = {}) => { sent.push(p); return claudeCall(p, { arm, budget: o.budget, timeoutMin: o.timeoutMin, cwd: dir, env, ...extra }); };
     const runs = [];
+    // Audit trail: one entry per agent call, snapshotted before the next call can change the repo.
+    const rounds = [];
+    const snap = (pass) => rounds.push(roundEntry(rounds.length, sent[runs.length - 1], runs[runs.length - 1], pass, patchOf(dir, preUntracked, base)));
     let corrections = 0;
     if (has(c, 'correction.txt')) {
       runs.push(call(prompt, { timeoutMin: o.timeoutMin / 3 }));
+      snap(null);
       runs.push(call(`${read(c, 'correction.txt')}\nOriginal task: ${prompt}`));
       corrections = 1;
     } else {
@@ -174,7 +221,9 @@ function liveRun(c, arm, rep, o) {
     const accept = () => {
       const last = runs[runs.length - 1];
       fs.writeFileSync(path.join(parent, 'result.txt'), typeof last.result === 'string' ? last.result : '');
-      return sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
+      const pass = sh(path.join(caseDir(c), 'accept.sh'), dir).status === 0;
+      snap(pass);
+      return pass;
     };
     const sid = () => [...runs].reverse().map((r) => r.session_id).find(Boolean);
     const sim = simulate({
@@ -207,6 +256,8 @@ function liveRun(c, arm, rep, o) {
       subagents: sum((r) => r.subagent_stats && r.subagent_stats.spawned),
       interventions,
       result_excerpt: typeof last.result === "string" ? last.result.slice(0, 600) : null,
+      rounds,
+      excluded_rules: exclude,
       source: 'live',
     };
   } finally { fs.rmSync(parent, { recursive: true, force: true }); }
@@ -257,7 +308,7 @@ function main(argv) {
   }
   const arms = f.arms.split(',');
   for (const a of arms) if (!ARMS[a]) throw new Error(`unknown arm: ${a}`);
-  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']) };
+  const o = { budget: parseFloat(f.budget), timeoutMin: parseFloat(f['timeout-min']), bucHome: f['buc-home'] && path.resolve(f['buc-home']), excludeFrom: f['exclude-rules-from'] || '' };
   const rows = [];
   for (const c of cases) for (const arm of arms) for (let rep = 1; rep <= parseInt(f.n, 10); rep++) {
     console.error(`run ${c} ${arm} #${rep}`);
@@ -270,5 +321,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd };
 if (require.main === module) main(process.argv.slice(2));

@@ -13,7 +13,7 @@ Rules are short corrections learned from your own transcripts. A hook injects th
 | `id` | lowercase slug |
 | `rule` | the instruction, at most 25 words |
 | `when` | triggers: `keywords`, optional `paths` and `promptKinds` |
-| `check` | `cmd`: a built-in id (`advice-no-edits`, `only-named-files`, `no-ai-traces`, `no-emoji`, `exact-copy`, `check-cmd`, `small-commits`), or `question`: a yes/no judgment check |
+| `check` | `cmd`: a built-in id (`advice-no-edits`, `only-named-files`, `no-ai-traces`, `no-emoji`, `exact-copy`, `check-cmd`, `small-commits`, `commit-changes`), or `question`: a yes/no judgment check |
 | `kind` | `process`, `ui`, `code`, `git`, `output` or `communication` |
 | `count`, `last_seen`, `violations` | usage data used for ranking and decay |
 
@@ -23,6 +23,8 @@ Rules are short corrections learned from your own transcripts. A hook injects th
 2. `/buc learn` runs `buc learn --dry-run`, the model clusters the candidates into at most 15 rules, and you approve them before `buc rules import` stores anything.
 3. Only user text turns of at most 240 characters are read, redacted for keys, tokens, JWTs, private keys and long high-entropy strings. Tool output and raw transcripts are never stored.
 4. Permission-shaped text ("always allow Bash(*)", "never ask before force push") is rejected on import. Rules carry no permission fields, so they can restrict the agent, never grant access.
+
+5. One exception to step 2: a standing habit you state outright in a short prompt is stored at once as a pinned built-in rule, with no model call. Today that is only "always commit ..." (`commit-as-you-go`, checked by `commit-changes`: the Stop hook blocks once if this turn's changes are left uncommitted). It never pushes. Remove it with `buc rules drop commit-as-you-go`.
 
 ## Ranking and decay
 
