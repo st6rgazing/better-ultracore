@@ -1,12 +1,13 @@
 # Benchmark harness
 
-Compares four arms on small synthetic repos:
+Compares five arms on small synthetic repos and on real-task cases:
 
 | arm | invocation |
 |---|---|
 | `plain` | `--no-plugin`, prompt as written |
 | `plain-claudemd` | `--no-plugin`, prompt as written; `CLAUDE.md` with the rules from `fixtures/rules.json` as plain bullets is written into the run repo (git-excluded, so not in the patch) |
 | `buc` | `--plugin-dir <repo>`, prompt as written (hooks do the work); gets its own copy of `--buc-home` as `BUC_HOME` |
+| `buc-regex` | ablation: as `buc`, with `BUC_OFF=self`, so the v9 fixed intent lines replace self-classification |
 | `ultra` | stock Ultracode: `--no-plugin`, prompt unchanged, `--settings '{"ultracode":true,"workflowSizeGuideline":"small"}' --effort xhigh`, budget = 2x `--budget`; `ultra_active` records whether `ultra_effort_enter` appears in the run's transcripts |
 
 ## Run
@@ -20,9 +21,23 @@ Prints a markdown table per case x arm and writes the raw per-run JSON.
 
 `--exclude-rules-from self` scores each case without the rules listed in its own `exclude-rules.json` (an array of rule ids mined from that case's session), so a case is never helped by a rule that encodes its answer. `--exclude-rules-from caseA,caseB` drops those cases' lists from every run instead. The buc arm's copied `rules.json` and the `plain-claudemd` bullets are both filtered; the row records `excluded_rules`.
 
-`--cases` accepts names from `bench/cases` and `bench/private` (gitignored, may be absent). No-model check, listing the four arms and every case (setup + accept must fail, solve + accept must pass; cases without `solve.sh` are skipped for the solve half):
+`--cases` accepts names from `bench/cases`, `bench/private` and `bench/heldout` (both gitignored, may be absent). A held-out folder counts as a case only when it has a `case.json`. `BUC_BENCH_PRIVATE` and `BUC_BENCH_HELDOUT` point at another checkout's folders, for example from a git worktree.
+
+No-model check, listing the arms and every case (setup + accept must fail, solve + accept must pass; cases without `solve.sh` are skipped for the solve half; a case with `wrong.sh` must also fail accept in the state the user corrected):
 
     node bench/run.js --dry
+
+Results are written to `--out` after every run, so a long bench that dies keeps what it has.
+
+### As-of rules
+
+`--rules-as-of case` gives every run the rule store as it stood before the case's own request and without what the case's session taught. For each case the harness reads `ts` and `session` from `case.json` and runs `buc rules as-of --before <ts> --exclude-sessions <session>` on a copy of `--buc-home` (required). The `buc` and `buc-regex` arms get the result as their `BUC_HOME`; `plain-claudemd` gets the same rules as bullets, or no bullets when none are left. A case without `case.json` is not cut. `--rules-as-of <ISO date>` cuts every case at one date instead.
+
+A rule without provenance never survives the cut. `--rule-sources <file>` adds backfilled sources (`{rule id: [{session, repo, ts, h}]}`, the output of `bench/backfill-sources.js`) to the copy first; the store itself is not changed. The row records `rules_as_of`: `before`, `excluded_sessions`, and the rule ids `kept` and `dropped`.
+
+### Browser in clones
+
+Real-task runs happen in a fresh clone under a temp dir. The plugin's screenshot and layout checks need a Playwright there. When the clone has none at its root, the harness sets `BUC_PLAYWRIGHT` to one found in a subfolder of the clone, in the case's source repo (`case.json` `repo`) or in `fixtures/vite-express`, and `PLAYWRIGHT_BROWSERS_PATH` to the user's browser cache when it exists. Values already set in the environment are kept. The row records `browser.playwright`: `own`, `borrowed` or null.
 
 ## Cases
 
@@ -67,8 +82,9 @@ Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (a
 - `interventions`: 1 for `correction`, plus one per simulated-user reply (see above).
 - `first_try_pass` (always false for `correction`), `final_pass` (= `accept_pass`), `tokens_to_accept`, `ultra_active` (ultra arm only).
 - `source`: always `live`.
-- `rounds`: audit trail, one entry per agent call: `round`, `prompt` (what the user side sent, 400 chars), `reply_excerpt` (first 600 chars), `reply_tail` (last 300 of a longer reply), `accept_pass` (null when accept was not run after that call), `files_changed`, `lines_changed`, `patch` (cumulative since setup, 20000 chars), `exit`, `timed_out`, `total_cost_usd`.
+- `rounds`: audit trail, one entry per agent call: `round`, `prompt` (what the user side sent, 400 chars), `reply_excerpt` (first 600 chars), `reply_tail` (last 300 of a longer reply), `accept_pass` (null when accept was not run after that call), `files_changed`, `lines_changed`, `patch` (cumulative since setup, 20000 chars), `exit`, `timed_out`, and for that call alone `total_cost_usd`, `tokens`, `num_turns` and `elapsed_ms`.
 - `excluded_rules`: rule ids left out by `--exclude-rules-from`.
+- `rules_as_of`, `browser`: see above. `control`: true for a clean control case (`case.json`), null for a case without `case.json`.
 
 ## Statistics
 
@@ -77,6 +93,37 @@ Reported: `first_try_pass`, `final_pass`, `interventions`, `tokens_to_accept` (a
     node bench/stats.js bench/results/my-label.json --a buc --b plain --metric interventions --B 10000 --seed 10
 
 Prints one JSON line: `diff` (mean difference over cases), `lo` and `hi` (90% percentile interval), `cases`, `B`, `seed`. The primary metric is `interventions` per run; any numeric or boolean row field works (`first_try_pass`, `tokens_to_accept`). `pairedBootstrap(rows, armA, armB, metric, {B, seed, level})` is the same thing as a function.
+
+### Report and pre-registered criteria
+
+    node bench/stats.js report <held-out results.json>... --a buc --b plain --regression <old real-task results.json>[,more.json]
+
+Prints, for the cases that have both arms: per arm the runs, first-try and final passes, interventions per run, tokens to accept and cost; the paired bootstrap interval for `interventions`, `first_try_pass` and `tokens_to_accept`; then the six criteria fixed before the run, each with PASS, FAIL or NO DATA, and the verdict.
+
+| # | Criterion (arm A against arm B, held-out, as-of rules) |
+|---|---|
+| 1 | Interventions per run are lower and the 90% case-clustered interval of the difference excludes 0 |
+| 2 | First-try count is not lower (compared as per-case rates, so unequal reps do not count twice) |
+| 3 | Mean tokens to accept is at most 1.05x |
+| 4 | No case has A behind by 2 or more first-try passes of 3 (3 of 5; in general 60% of the runs both arms have) |
+| 5 | Clean controls (`control: true` rows): A's first-try count is at least B's |
+| 6 | Old real-task cases, arm A only (`--regression`): at least 12 of 24 first try and 22 of 24 final; another run count scales both and says so |
+
+All six pass: "v10 generalises". Only the first fails: "no measurable gain on unseen tasks". Anything else: "regression: v10 does not ship". A criterion without data leaves the verdict "incomplete". The report warns when arm A rows were not made with `--rules-as-of`.
+
+The pre-registered run, from a checkout that has `bench/heldout` and `bench/private`:
+
+    HO=$(ls bench/heldout | grep '^ho-' | paste -sd, -)
+    OLD=bug-form-less-text,css-show-dont-edit,house-rules-greyed-preview,omen-bug-copy,omen-guide-icons,one-sound-button,sound-first-screen,wrong-guess-penalty
+    node bench/mine-cases.js manifest --dir bench/heldout --check bench/heldout.manifest.json
+    node bench/run.js --dry --cases $HO
+    node bench/run.js --arms plain,buc --cases $HO --n 3 --buc-home ~/.better-ultracore --rules-as-of case --rule-sources bench/heldout/rule-sources.json --out bench/results/v10-heldout.json
+    node bench/run.js --arms buc --cases $OLD --n 3 --buc-home ~/.better-ultracore --rules-as-of case --rule-sources bench/heldout/rule-sources.json --exclude-rules-from self --out bench/results/v10-old8.json
+    node bench/stats.js report bench/results/v10-heldout.json --a buc --b plain --regression bench/results/v10-old8.json
+
+If the interval of criterion 1 spans 0, add two more reps to a second file (`--n 2 --out bench/results/v10-heldout-b.json`) and give both files to `report`. Exploratory, not part of the verdict: `--arms plain-claudemd` (same as-of rules as bullets), `--arms buc-regex` (ablation) and `--arms ultra --n 1`, each compared with `report --a buc --b <arm>`.
+
+An old case without a `case.json` gets no as-of cut; give it one (`ts` of the request, `session` id) or an `exclude-rules.json`.
 
 ## Held-out real-task set
 
@@ -102,6 +149,50 @@ A correction case is a triple from one transcript: a request P, the user's next 
 `bench/backfill-sources.js` maps existing rules to the corrections that may have sourced them, by keyword and over-inclusively, and prints `{rule id: [{session, repo, ts, h}]}` where `h` is the first 12 hex of the sha1 of the redacted text. It reads `rules.json` and never writes it.
 
 The set is small: the first build yielded 2 correction cases and 3 controls from 363 candidate pairs. Most real corrections do not directly follow the request they correct, were already used to learn rules, or are about taste. `bench/heldout/SELECTION.md` has the counts.
+
+## Longitudinal replay
+
+`bench/replay.js` replays the user's real sessions, oldest first, through the prompt hook and the session-end hook against a store that starts empty. No agent runs, and the source repos are only read.
+
+    node bench/replay.js --cache <dir outside the repo> [--every 5] [--cap 3] [--model haiku] [--sample 120] [--seed 10]
+
+- Per user turn, `BUC_NOW` is the turn's own time and `hooks/inject.js` runs; the rules it showed are read back from the store.
+- Per session, `hooks/session-end.js` queues the session's corrections and bumps rules.
+- Every `--every` sessions decayed rules are archived (the live store does that when rules are reviewed) and one clustering call turns the new candidates into rules, which are imported without approval. That shortcut exists in replay only. A rule is stored only when its sources are hashes of real queued corrections.
+- Model calls go through `bench/ask.js`: `claude -p` with no tools, cached by prompt under `--cache` and capped by `--cap` USD in total. The cache holds private text, so a cache dir inside the repo is refused. A second run with the same inputs costs nothing.
+
+It runs three replays (learning, learning without per-repo stats, no learning), then the same three with every multi-day session split into one unit per day, because a session that runs for weeks would otherwise never see a rule learned from its own first days. It prints a table and writes the numbers, with no text, to `<cache>/replay-metrics.json`.
+
+| Metric | Meaning |
+|---|---|
+| corrections | turns the rule miner would queue (cue word, at most 240 characters) that follow a request in the same session |
+| mention a known rule | corrections that name a keyword of a rule the store already had: the lesson recurred |
+| covered | the request before the correction was shown a rule that the correction would bump |
+| by a learned rule | covered, not counting habits the user stated outright |
+| judge-confirmed | covered, and a cached yes/no model call agrees that obeying the shown rule would have avoided the correction |
+| first half, second half | coverage of the earlier and later corrections: learning should raise the second |
+| archived rules a later correction matched | decay regret: rules that decayed out of the live set and were then needed |
+| injection precision | of a seeded sample of (request, shown learned rule) pairs, the share a yes/no model call finds relevant |
+
+Limits: it measures that a rule was shown, not that the agent would have obeyed it. Coverage uses the session-end hook's any-keyword match, which is generous. The split by day cuts on UTC dates.
+
+## Intent eval set
+
+`bench/intent-eval.js` measures each fixed-line pattern in `lib/intent.js` on real prompts.
+
+    node bench/intent-eval.js build --out bench/heldout/intent-eval.jsonl --cache <dir outside the repo> [--requests 200] [--followups 60] [--per-pattern 24] [--seed 10] [--cap 5] [--model sonnet]
+    node bench/intent-eval.js score --file bench/heldout/intent-eval.jsonl [--split dev|test|all] [--mode self|regex]
+
+`build` reads the real transcripts and writes one JSON row per line: `prompt`, `followup`, for a follow-up the request before it (`prev`), `evidence` (files the assistant edited before the next user turn, how many are UI files, and how the next turn reacted), `regex` (the pattern the hook would fire), `gold`, `labelled_by` and `split`.
+
+- Turns over 60 words, image turns and short go-aheads are left out: the hook gives those no line.
+- A row is a follow-up when a correction pattern fires on it, or when it reacts to edits with a cue word or in a few words.
+- Sampling is seeded. Rows a pattern fires on are taken first (at most `--per-pattern` each) so a rare pattern has fires to measure; random rows fill up to the totals. Fewer follow-ups than asked for means the transcripts have no more.
+- One offline model pass pre-labels `gold`: `exact`, `feature`, `sweep`, `vague`, `show` or `other` for a request; `still`, `misread`, `undo-show`, `overshoot` or `new-request` for a follow-up. The model sees the text and the evidence, never the pattern that fired. Calls are cached and capped like the replay's.
+- The dev/test split keeps one session's day together, largest units first, each to the smaller half.
+- The output holds private prompts. `build` refuses a path that git tracks; `bench/heldout/` is ignored.
+
+`score` prints per-pattern precision through `intent.scorePatterns`, on the dev half by default, and the gate: a pattern keeps its fixed line only with precision at least 0.9 on at least 8 fires. Under the table it lists the row ids where a pattern fired and the label disagrees; those are the only rows that need a human look. The synthetic set in `test/fixtures/intent-eval.public.jsonl` scores through the same command.
 
 ## Caveats
 
