@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+'use strict';
+// buc-shot: one screenshot of the running app, for the agent to Read.
+//   buc-shot [--path /route] [--click "text=Play"]... [--out file.png] [--audit] [--classes a,b] [--root dir] [--timeout ms] [--json]
+// Starts the dev server if needed and always stops it. Exits 0 with "skipped: <reason>" when there is no engine or no server.
+const { shot, stopAll } = require('../lib/shot');
+
+const USAGE = 'usage: buc-shot [--path /route] [--click <selector>]... [--out file.png] [--audit] [--classes a,b] [--root dir] [--timeout ms] [--json]';
+
+// Parses argv into shot() options plus {json}. Throws on an unknown flag or a missing value.
+function parse(argv) {
+  const opts = { root: process.cwd(), path: '/', clicks: [], audit: false, json: false };
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    const value = () => {
+      if (i + 1 >= argv.length) throw new Error(`${flag} needs a value`);
+      return argv[++i];
+    };
+    if (flag === '--audit') opts.audit = true;
+    else if (flag === '--json') opts.json = true;
+    else if (flag === '--path') opts.path = value();
+    else if (flag === '--click') opts.clicks.push(value());
+    else if (flag === '--out') opts.out = value();
+    else if (flag === '--root') opts.root = value();
+    else if (flag === '--classes') opts.classes = value().split(',').map((s) => s.trim()).filter(Boolean);
+    else if (flag === '--timeout') opts.timeoutMs = Math.max(1000, Number(value()) || 0);
+    else throw new Error(`unknown option ${flag}`);
+  }
+  return opts;
+}
+
+// The lines printed for a result: the PNG path first, so the agent can Read it.
+function render(r) {
+  if (r.status !== 'ok') return [`skipped: ${r.reason}`];
+  const audit = r.findings.length ? r.findings.map((f) => `audit: ${f}`) : [];
+  return [`shot: ${r.png}`, `url: ${r.url} (${r.engine}, 1280x800)`, ...audit, ...r.notes.map((n) => `note: ${n}`)];
+}
+
+async function main(argv) {
+  let opts;
+  try { opts = parse(argv); } catch (e) {
+    console.error(`${e.message}\n${USAGE}`);
+    return 2;
+  }
+  // Nothing may outlive this process: a signal or an early exit kills any server still up.
+  process.on('exit', stopAll);
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(sig, () => process.exit(143));
+  const { json, ...rest } = opts;
+  const r = await shot(rest);
+  console.log(json ? JSON.stringify(r) : render(r).join('\n'));
+  return 0;
+}
+
+module.exports = { parse, render, main };
+
+if (require.main === module) main(process.argv.slice(2)).then((code) => process.exit(code), () => { console.log('skipped: screenshot failed'); process.exit(0); });

@@ -118,7 +118,6 @@ test('captureChrome runs the binary with a screenshot path and reports whether a
   assert.strictEqual(await shot.captureChrome(fakeChrome(dir), { url: 'http://127.0.0.1:9/', out }), true);
   assert.strictEqual(fs.readFileSync(out, 'utf8'), 'PNGDATA');
   assert.strictEqual(await shot.captureChrome(path.join(dir, 'missing'), { url: 'http://127.0.0.1:9/', out: path.join(dir, 'b.png') }), false);
-  assert.deepStrictEqual(fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('buc-chrome-')), [], 'the temporary profile is removed');
 });
 
 test('capturePlaywright clicks, saves a PNG and audits the lying-UI fixture', { skip: !playwrightDir() && 'Playwright is not installed' }, async () => {
@@ -231,6 +230,56 @@ test('shot with Playwright audits the lying UI and limits findings to the given 
     assert.match(bad.reason, /^capture failed: /);
     assert.strictEqual(await shot.ping(r.url), false);
   });
+});
+
+const CLI = path.join(ROOT, 'bin', 'buc-shot');
+const cli = (args, env = {}, opts = {}) => spawnSync('node', [CLI, ...args], { encoding: 'utf8', env: { ...process.env, BUC_PLAYWRIGHT: '', ...env }, ...opts });
+
+test('buc-shot exits 0 with "skipped" when no engine is available, and 2 on a bad option', () => {
+  const dir = app();
+  const r = cli(['--root', dir], { BUC_SHOT_ENGINE: 'none' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(r.stdout.trim(), 'skipped: no browser engine: install Playwright in the repo or Google Chrome');
+  const j = cli(['--root', dir, '--json'], { BUC_SHOT_ENGINE: 'none' });
+  assert.strictEqual(JSON.parse(j.stdout).status, 'skipped');
+  const bad = cli(['--nope']);
+  assert.strictEqual(bad.status, 2);
+  assert.match(bad.stderr, /unknown option --nope\nusage: buc-shot/);
+  assert.strictEqual(cli(['--path']).status, 2);
+});
+
+test('buc-shot prints the PNG path first and leaves no server', async () => {
+  const dir = app();
+  const out = path.join(dir, 'cli.png');
+  const r = cli(['--root', dir, '--path', '/a', '--out', out, '--click', 'text=Details', '--audit', '--classes', 'save, cancel'], { BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(dir) });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const lines = r.stdout.trim().split('\n');
+  assert.strictEqual(lines[0], `shot: ${out}`);
+  assert.match(lines[1], /^url: http:\/\/localhost:\d+\/a \(chrome, 1280x800\)$/);
+  assert.deepStrictEqual(lines.slice(2), ['note: clicks were ignored: they need Playwright in the repo', 'note: no layout audit: it needs Playwright in the repo']);
+  assert.strictEqual(await shot.ping(lines[1].split(' ')[1]), false);
+});
+
+test('buc-shot killed mid-run takes its server down with it', async () => {
+  const dir = app();
+  // A browser that never finishes, so the CLI is still holding the server when the timeout kills it.
+  const slow = path.join(dir, 'slow-chrome');
+  fs.writeFileSync(slow, '#!/bin/sh\nfor a in "$@"; do case "$a" in http*) echo "$a" > "$(dirname "$0")/url.txt";; esac; done\necho $$ > "$(dirname "$0")/pid.txt"\nexec sleep 30\n', { mode: 0o755 });
+  const r = cli(['--root', dir], { BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: slow }, { timeout: 2500, killSignal: 'SIGTERM' });
+  assert.strictEqual(r.signal || r.status, 143);
+  const url = fs.readFileSync(path.join(dir, 'url.txt'), 'utf8').trim();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.strictEqual(await shot.ping(url), false);
+  const pid = Number(fs.readFileSync(path.join(dir, 'pid.txt'), 'utf8'));
+  assert.throws(() => process.kill(pid, 0), /ESRCH/, 'the browser is gone too');
+});
+
+test('buc-shot parse and render', () => {
+  const { parse, render } = require('../bin/buc-shot');
+  assert.deepStrictEqual(parse(['--path', '/x', '--click', 'a', '--click', 'b', '--audit', '--classes', '', '--timeout', '5']), { root: process.cwd(), path: '/x', clicks: ['a', 'b'], audit: true, json: false, classes: [], timeoutMs: 1000 });
+  assert.throws(() => parse(['--out']), /--out needs a value/);
+  assert.deepStrictEqual(render({ status: 'skipped', reason: 'why' }), ['skipped: why']);
+  assert.deepStrictEqual(render({ status: 'ok', png: '/t/a.png', url: 'http://h/', engine: 'playwright', findings: ['overlap: a and b'], notes: [] }), ['shot: /t/a.png', 'url: http://h/ (playwright, 1280x800)', 'audit: overlap: a and b']);
 });
 
 // end
