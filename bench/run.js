@@ -9,7 +9,9 @@ const { simulate } = require('./sim-user');
 
 const ROOT = path.join(__dirname, '..');
 const CASES_DIR = path.join(__dirname, 'cases');
-const PRIVATE_DIR = path.join(__dirname, 'private');
+const PRIVATE_DIR = process.env.BUC_BENCH_PRIVATE || path.join(__dirname, 'private');
+// Held-out real-task cases (gitignored). BUC_BENCH_HELDOUT points at another checkout's copy, e.g. from a worktree.
+const HELDOUT_DIR = process.env.BUC_BENCH_HELDOUT || path.join(__dirname, 'heldout');
 const RULES = path.join(__dirname, 'fixtures', 'rules.json');
 const ALLOWED_TOOLS = 'Bash(node:*),Bash(npm:*),Bash(git:*),Agent,Workflow,Read,Edit,Write,Grep,Glob';
 
@@ -32,12 +34,18 @@ function parseArgs(argv) {
 
 const sh = (script, dir) => spawnSync('sh', [script, dir], { encoding: 'utf8' });
 
-// Case names from bench/cases and (when present) bench/private; public wins on a name clash.
-function listCases() {
+// Case names from bench/cases and (when present) bench/private and bench/heldout; public wins on a name clash.
+// A held-out dir is a case only with a case.json next to its setup.sh, so working files there are not picked up.
+function listCases(roots = [HELDOUT_DIR, PRIVATE_DIR, CASES_DIR]) {
   const out = new Map();
-  for (const root of [PRIVATE_DIR, CASES_DIR]) {
+  for (const root of roots) {
     if (!fs.existsSync(root)) continue;
-    for (const c of fs.readdirSync(root)) if (fs.existsSync(path.join(root, c, 'setup.sh'))) out.set(c, path.join(root, c));
+    for (const c of fs.readdirSync(root)) {
+      const dir = path.join(root, c);
+      if (!fs.existsSync(path.join(dir, 'setup.sh'))) continue;
+      if (root === HELDOUT_DIR && !fs.existsSync(path.join(dir, 'case.json'))) continue;
+      out.set(c, dir);
+    }
   }
   return out;
 }
