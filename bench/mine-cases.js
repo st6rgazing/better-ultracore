@@ -158,4 +158,9 @@ function triples(file) {
   return out;
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples };
+// Step 1: candidates from every transcript under root.
+function mine(root, { skip = [] } = {}) {
+  return transcripts(root, skip).flatMap(triples);
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine };

@@ -162,3 +162,27 @@ test('resolveShas and diffStat resolve by timestamp', () => {
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('isOps: short go-aheads only', () => {
+  for (const t of ['Deploy to live', 'push to live', 'yes go ahead', 'ok']) assert.ok(mc.isOps(t), t);
+  for (const t of ['fix and push to live', 'push and also add a settings page with tabs for sound and display options', 'make it blue']) assert.ok(!mc.isOps(t), t);
+});
+
+test('a fixture transcript and repo yield the expected triple', () => {
+  const fx = fixture();
+  try {
+    const all = mc.mine(fx.root);
+    assert.strictEqual(all.length, 2);
+    const c = all[0];
+    assert.strictEqual(c.id, '11111111-000');
+    assert.strictEqual(c.repo, fx.repo);
+    assert.strictEqual(c.p.text, 'make the late fee five dollars instead of two');
+    assert.strictEqual(c.c.text, 'not the monthly plan, the yearly plan fee');
+    assert.strictEqual(c.c.idx, 2);
+    assert.strictEqual(c.ack, true);
+    assert.deepStrictEqual([c.base, c.wrong, c.fix], [fx.sha.base, fx.sha.wrong, fx.sha.fix]);
+    assert.strictEqual(c.fix_lines, 2);
+    assert.ok(c.work >= 2);
+    assert.strictEqual(all[1].fix, null);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
