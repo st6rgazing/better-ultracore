@@ -20,4 +20,24 @@ function sourceOf(turn) {
   };
 }
 
-module.exports = { sourceOf };
+// Every correction the rule miner could have seen that carries at least `min` keywords of a rule becomes a
+// source of that rule. Rules without keywords or without a match map to an empty list.
+function backfill(rules, turns, { min = 1 } = {}) {
+  const out = {};
+  for (const r of rules) {
+    const seen = new Set();
+    out[r.id] = [];
+    for (const t of turns) {
+      if (!minerVisible(t.text) || keywordHits(t.text, [r]).hits < min) continue;
+      const s = sourceOf(t);
+      const key = `${s.session}|${s.h}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out[r.id].push(s);
+    }
+    out[r.id].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  }
+  return out;
+}
+
+module.exports = { sourceOf, backfill };

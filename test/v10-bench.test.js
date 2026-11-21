@@ -397,3 +397,22 @@ test('mine-cases CLI: mine, select, write, verify and manifest run end to end', 
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('backfill-sources maps rules to mined corrections by keyword and stores no text', () => {
+  const bf = require('../bench/backfill-sources');
+  const turns = [
+    { session: 's1', cwd: '/nonexistent/app', ts: T(1), text: 'no emoji, use an icon' },
+    { session: 's1', cwd: '/nonexistent/app', ts: T(2), text: 'no emoji, use an icon' },
+    { session: 's2', cwd: '/nonexistent/app', ts: T(3), text: 'dont commit that yet' },
+    { session: 's2', cwd: '/nonexistent/app', ts: T(4), text: 'please add an icon to the button' },
+  ];
+  const m = bf.backfill([...RULES, { id: 'bare' }], turns);
+  assert.strictEqual(m['icons-not-emoji'].length, 1);
+  assert.deepStrictEqual(Object.keys(m['icons-not-emoji'][0]), ['session', 'repo', 'ts', 'h']);
+  assert.match(m['icons-not-emoji'][0].h, /^[0-9a-f]{12}$/);
+  assert.strictEqual(m['small-commits'][0].session, 's2');
+  assert.deepStrictEqual(m.bare, []);
+  assert.ok(!JSON.stringify(m).includes('emoji,'));
+  // a stricter threshold maps fewer
+  assert.strictEqual(bf.backfill(RULES, turns, { min: 3 })['icons-not-emoji'].length, 0);
+});
+
