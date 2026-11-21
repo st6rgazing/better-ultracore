@@ -429,4 +429,56 @@ test('track runs under 60 ms per call and the hook script prints valid JSON', ()
   assert.strictEqual(hook('track.js', batch(1, { cwd: dir }), home), null);
 });
 
+// A repo holding the UI fixture app, with a dev server in .claude/buc.json, and a stand-in browser for the hook to use.
+function uiRepo(conf = { ui: { dev: 'node server.js' } }) {
+  const fx = path.join(__dirname, 'fixtures', 'ui-app');
+  const dir = repo({ 'server.js': fs.readFileSync(path.join(fx, 'server.js'), 'utf8'), 'index.html': fs.readFileSync(path.join(fx, 'index.html'), 'utf8'), 'app.js': 'a\n', '.claude/buc.json': JSON.stringify(conf) });
+  const bin = path.join(tmp('buc-bin-'), 'fake-chrome');
+  fs.writeFileSync(bin, '#!/bin/sh\nfor a in "$@"; do case "$a" in --screenshot=*) printf PNGDATA > "${a#--screenshot=}";; esac; done\n', { mode: 0o755 });
+  return { dir, env: { BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: bin, BUC_PLAYWRIGHT: '' } };
+}
+
+test('Stop fallback: UI files changed and no shot gives the PNG path as additionalContext, once', () => {
+  const { dir, env } = uiRepo();
+  const home = tmp('buc-home-');
+  seedTurn(home, turn(dir, 'make the card wider'));
+  write(dir, 'index.html', '<div class="card wide">hi</div>\n');
+  const out = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home, env);
+  assert.strictEqual(out.decision, undefined);
+  const text = out.hookSpecificOutput.additionalContext;
+  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change: (\S+\.png) \. Read it once/);
+  const png = text.match(/: (\S+\.png) /)[1];
+  assert.strictEqual(fs.readFileSync(png, 'utf8'), 'PNGDATA');
+  fs.rmSync(png);
+  const saved = JSON.parse(fs.readFileSync(path.join(home, 'turn-s.json'), 'utf8'));
+  assert.ok(saved.shotAt > 0, 'the shot is recorded in the turn file');
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home, env), null, 'not again in the same turn');
+});
+
+test('Stop fallback stays quiet: shot already taken, no UI file, ui off, BUC_OFF=shot, no engine, or a hard block', () => {
+  const { dir, env } = uiRepo();
+  const home = tmp('buc-home-');
+  const stop = (extraEnv = {}) => hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home, { ...env, ...extraEnv });
+  seedTurn(home, turn(dir, 'rename a variable'));
+  write(dir, 'app.js', 'b\n');
+  assert.strictEqual(stop(), null, 'no UI file changed');
+  seedTurn(home, turn(dir, 'make the card wider', { shotAt: 123 }));
+  write(dir, 'index.html', '<div class="card wide">hi</div>\n');
+  assert.strictEqual(stop(), null, 'the agent already took one');
+  seedTurn(home, turn(dir, 'make the card wider'));
+  assert.strictEqual(stop({ BUC_OFF: 'shot' }), null);
+  seedTurn(home, turn(dir, 'make the card wider'));
+  assert.strictEqual(stop({ BUC_SHOT_ENGINE: 'none' }), null, 'skipped is silent');
+  const hard = uiRepo();
+  seedTurn(home, turn(hard.dir, 'make the card wider'));
+  write(hard.dir, 'index.html', '<<<<<<< HEAD\n<div class="card wide">hi</div>\n');
+  const blocked = hook('stop-check.js', { session_id: 's', cwd: hard.dir }, home, hard.env);
+  assert.strictEqual(blocked.decision, 'block');
+  assert.doesNotMatch(blocked.reason, /screenshot/);
+  const off = uiRepo({ ui: false });
+  seedTurn(home, turn(off.dir, 'make the card wider'));
+  write(off.dir, 'index.html', '<div class="card wide">hi</div>\n');
+  assert.strictEqual(hook('stop-check.js', { session_id: 's', cwd: off.dir }, home, off.env), null);
+});
+
 // end
