@@ -25,10 +25,14 @@ const ARMS = {
   ultra: { noPlugin: true, budgetMult: 2, extra: ['--settings', '{"ultracode":true,"workflowSizeGuideline":"small"}', '--effort', 'xhigh'] },
 };
 
+const FLAGS = new Set(['arms', 'cases', 'n', 'budget', 'timeout-min', 'out', 'dry', 'buc-home', 'rules-as-of', 'rule-sources', 'exclude-rules-from']);
+
+// Unknown flags, --help and unsplit flag strings throw instead of silently starting a full default run.
 function parseArgs(argv) {
   const f = { arms: 'plain,plain-claudemd,buc,ultra', n: '1', budget: '1', 'timeout-min': '10' };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i].replace(/^--/, '');
+    if (!argv[i].startsWith('--') || !FLAGS.has(k)) throw new Error(`unknown argument ${JSON.stringify(argv[i])}; flags: ${[...FLAGS].map((x) => `--${x}`).join(' ')}`);
     f[k] = k === 'dry' ? true : argv[++i];
   }
   return f;
@@ -440,4 +444,7 @@ function main(argv) {
 }
 
 module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome, armOff, playwrightIn, browserEnv };
-if (require.main === module) main(process.argv.slice(2));
+if (require.main === module) {
+  try { parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); process.exit(2); }
+  main(process.argv.slice(2));
+}
