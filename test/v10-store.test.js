@@ -444,3 +444,36 @@ test('outside a git repo a habit is stored only with a global cue; one argument 
   habits.capture(HABIT);
   assert.strictEqual(store.loadRules()[0].scope, undefined);
 });
+
+const { spawnSync } = require('node:child_process');
+const BUC = path.join(__dirname, '..', 'bin', 'buc');
+const buc = (args, env = {}) => spawnSync('node', [BUC, ...args], { encoding: 'utf8', env: { ...process.env, ...env } });
+
+test('buc rules as-of writes the as-of rule set to --out and leaves the live store alone', () => {
+  const home = fresh();
+  store.importRules([
+    { ...RULE, sources: [src('A', 0), src('B', 10, 'bbbbbbbbbbbb')] },
+    { ...RULE, id: 'late-rule', sources: [src('C', 20, 'cccccccccccc')] },
+    { ...RULE, id: 'no-source' },
+  ]);
+  fs.writeFileSync(path.join(home, 'rules.archive.json'), JSON.stringify([store.normalize({ ...RULE, id: 'old-rule', sources: [src('B', 1, 'dddddddddddd')] }).rule]));
+  const before = fs.readFileSync(path.join(home, 'rules.json'), 'utf8');
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-asof-')), 'nested', 'home');
+  const r = buc(['rules', 'as-of', '--before', new Date(T0 + 15 * DAY).toISOString(), '--exclude-sessions', 'A, Z', '--out', out], { BUC_HOME: home });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.deepStrictEqual([report.kept, report.dropped, report.excluded], [['only-named', 'old-rule'], ['late-rule', 'no-source'], ['A', 'Z']]);
+  const written = JSON.parse(fs.readFileSync(path.join(out, 'rules.json'), 'utf8'));
+  assert.deepStrictEqual(written.map((x) => [x.id, x.count]), [['only-named', 1], ['old-rule', 1]]);
+  assert.strictEqual(fs.readFileSync(path.join(home, 'rules.json'), 'utf8'), before);
+  assert.deepStrictEqual(JSON.parse(buc(['rules', 'as-of', '--exclude-sessions', 'A,B', '--out', out], { BUC_HOME: home }).stdout).kept, ['late-rule']);
+});
+
+test('buc rules as-of refuses a missing --out, the live store and a bad date', () => {
+  const home = fresh();
+  store.importRules([{ ...RULE, sources: [src('A', 0)] }]);
+  assert.match(buc(['rules', 'as-of', '--before', '2026-01-01'], { BUC_HOME: home }).stderr, /needs --out/);
+  assert.match(buc(['rules', 'as-of', '--out', home], { BUC_HOME: home }).stderr, /live store/);
+  const bad = buc(['rules', 'as-of', '--before', 'yesterday-ish', '--out', path.join(home, 'x')], { BUC_HOME: home });
+  assert.deepStrictEqual([bad.status, /bad --before/.test(bad.stderr), fs.existsSync(path.join(home, 'x'))], [1, true, false]);
+});
