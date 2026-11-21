@@ -94,3 +94,15 @@ test('setRepo sets and removes fields and keeps events', () => {
   assert.ok(!('handsOff' in store.repoState('r1')));
   assert.strictEqual(store.setRepo('', { handsOff: 'on' }), null);
 });
+
+test('saveLastTurn keeps head and files, and a call without rules merges', () => {
+  fresh();
+  store.saveLastTurn('s1', { rules: ['a'], repo: 'r1', ts: 5 });
+  assert.deepStrictEqual(store.loadLastTurn('s1'), { rules: ['a'], repo: 'r1', ts: 5 });
+  store.saveLastTurn('s1', { head: 'abc', files: { 'src/a.js': 'h1', 'new.js': null } });
+  assert.deepStrictEqual(store.loadLastTurn('s1'), { rules: ['a'], repo: 'r1', ts: 5, head: 'abc', files: { 'src/a.js': 'h1', 'new.js': null } });
+  store.saveLastTurn('s1', { rules: ['b'], repo: 'r1', ts: 6 });
+  assert.deepStrictEqual(store.loadLastTurn('s1'), { rules: ['b'], repo: 'r1', ts: 6 });
+  store.saveLastTurn('s2', { rules: [], repo: 'r1', ts: 7, head: 'h', files: {} });
+  assert.deepStrictEqual(store.loadLastTurn('s2'), { rules: [], repo: 'r1', ts: 7, head: 'h', files: {} });
+});
