@@ -9,7 +9,7 @@ const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
 const habits = require('../lib/rules/habits');
-const { intentLine, correctionLine, SELF, SELF_SHORT } = require('../lib/intent');
+const { readIntent, intentMode, correctionLine, SELF, SELF_SHORT } = require('../lib/intent');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
@@ -85,7 +85,7 @@ function run(input) {
   }
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
   if (tc) fixed.push(`Verify with ${tc} (not npx); report what you ran.`);
-  const intent = correctionLine(prompt, hadPrev) || intentLine(prompt, { kind });
+  const intent = correctionLine(prompt, hadPrev) || readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) }).line;
   fixed.push(intent, probeLine(prompt));
   capFixed(fixed, [tc && fixed.find((l) => l.startsWith('Verify with')), fixed[fixed.length - 1], intent, SELF_SHORT]);
   // A learned rule is worth more than the long form of the self-classification line.

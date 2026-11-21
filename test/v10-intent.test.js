@@ -1,7 +1,37 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { execFileSync, spawnSync } = require('node:child_process');
 const intent = require('../lib/intent');
+
+const INJECT = path.join(__dirname, '..', 'hooks', 'inject.js');
+const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
+const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+function repo(files = {}) {
+  const dir = tmp('buc-v10-repo-');
+  git(dir, 'init', '-q', '-b', 'main');
+  git(dir, 'config', 'user.email', 't@example.com');
+  git(dir, 'config', 'user.name', 't');
+  for (const [name, body] of Object.entries({ 'app.js': 'a\n', ...files })) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.writeFileSync(path.join(dir, name), body);
+  }
+  git(dir, 'add', '.');
+  git(dir, 'commit', '-qm', 'init');
+  return dir;
+}
+
+// Runs the prompt hook; returns the injected text ('' when it printed nothing).
+function inject(input, home, env = {}) {
+  const r = spawnSync('node', [INJECT], { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, BUC_OFF: '', CLAUDE_PLUGIN_ROOT: '', BUC_HOME: home, ...env } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '';
+}
+const turn = (home, id) => JSON.parse(fs.readFileSync(path.join(home, `turn-${id}.json`), 'utf8'));
 
 test('the misread line has an exit when no other reading fits', () => {
   const line = intent.correctionLine('no thats not what i meant', true);
@@ -81,4 +111,15 @@ test('regex mode restores the v9 lines', () => {
   assert.match(line('add a back button to the settings page'), /where the user will see it/);
   assert.match(line('add more tests'), /small step only/);
   assert.strictEqual(intent.readIntent('add a footer', { mode: 'regex' }).name, 'FEATURE');
+});
+
+test('the hook injects the self line, and BUC_OFF=self or "intent": "regex" restores v9', () => {
+  const p = 'add a back button to the settings page';
+  assert.match(inject({ prompt: p, cwd: repo(), session_id: 'm1' }, tmp('buc-home-')), /Before editing, decide which this is/);
+  const off = inject({ prompt: p, cwd: repo(), session_id: 'm2' }, tmp('buc-home-'), { BUC_OFF: 'self' });
+  assert.match(off, /where the user will see it/);
+  assert.doesNotMatch(off, /decide which this is/);
+  const conf = inject({ prompt: p, cwd: repo({ '.claude/buc.json': '{"intent":"regex"}' }), session_id: 'm3' }, tmp('buc-home-'));
+  assert.match(conf, /where the user will see it/);
+  assert.strictEqual(intent.intentMode(repo()), 'self');
 });
