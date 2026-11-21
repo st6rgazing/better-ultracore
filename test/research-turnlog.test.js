@@ -15,3 +15,18 @@ test('failed reads exit codes, error flags and failing test summaries', () => {
   assert.strictEqual(log.failed(undefined), false);
   assert.strictEqual(log.failed([{ type: 'text', text: 'FAILED tests/test_a.py::test_x' }]), true);
 });
+
+const bash = (command, tool_response) => ({ tool_name: 'Bash', tool_input: { command }, tool_response });
+
+test('kindOf tells edits, test commands, other runs, agents and read-only commands apart', () => {
+  assert.strictEqual(log.kindOf({ tool_name: 'Edit', tool_input: {} }), 'edit');
+  assert.strictEqual(log.kindOf({ tool_name: 'Write', tool_input: {} }), 'edit');
+  assert.strictEqual(log.kindOf({ tool_name: 'Agent', tool_input: {} }), 'agent');
+  assert.strictEqual(log.kindOf({ tool_name: 'Workflow', tool_input: {} }), 'agent');
+  assert.strictEqual(log.kindOf({ tool_name: 'Read', tool_input: {} }), '');
+  for (const c of ['npm test', 'npm run test -- --watch=false', 'node --test test/', 'cd api && pytest -q', 'go test ./...', 'npx vitest run', 'cargo test', 'python -m pytest']) {
+    assert.strictEqual(log.kindOf(bash(c)), 'test', c);
+  }
+  for (const c of ['node script.js', 'curl -s localhost:3000', 'ls && node build.js']) assert.strictEqual(log.kindOf(bash(c)), 'run', c);
+  for (const c of ['cat a.js', 'git status', 'ls -la && git diff', 'grep -rn foo src']) assert.strictEqual(log.kindOf(bash(c)), '', c);
+});
