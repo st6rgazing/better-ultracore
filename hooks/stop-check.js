@@ -4,7 +4,7 @@
 // When UI files changed and the agent took no screenshot, the hook takes one (45 s at most) and hands over the PNG path.
 const fs = require('node:fs');
 const path = require('node:path');
-const { checkSession, turnFiles, changedFiles, addedLines } = require('../lib/rules/check');
+const { checkSession, turnFiles, changedFiles, addedLines, freshNames } = require('../lib/rules/check');
 const { shotSync, resolveServer, isUiFile, classesIn } = require('../lib/shot');
 const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
@@ -25,7 +25,7 @@ function remember(sessionId) {
 // The fallback screenshot: UI files changed this turn, no buc-shot was run, and the repo has a dev server to start.
 // Returns the feedback line, or '' when there is nothing to show (also when the screenshot was skipped). BUC_OFF name: shot.
 // A screenshot is handed over only with evidence that it shows the change: the turn's added lines name classes, and the
-// captured page has at least one of them. A page without them (another route, a loader, a blank frame) says nothing
+// captured page has at least one of them (one of the new ones, when the turn introduced any). A page without them (another route, a loader, a blank frame) says nothing
 // about the change and would cost a turn, so the hook stays quiet and removes the image.
 // The line is already redacted where it quotes the page; the PNG path must stay as it is.
 function fallbackShot(sessionId) {
@@ -36,8 +36,12 @@ function fallbackShot(sessionId) {
     if (store.off('shot', root)) return '';
     const ui = changedFiles(root, turn).filter((f) => isUiFile(f) && fs.existsSync(path.join(root, f)));
     if (!ui.length || resolveServer(root, 0).skip) return '';
-    const classes = classesIn(addedLines(root, turn, ui));
-    if (!classes.length) return '';
+    const added = classesIn(addedLines(root, turn, ui));
+    if (!added.length) return '';
+    // Classes the turn introduced mark what it built: when there are any, only they count, since an old class on
+    // the page says nothing about a new element.
+    const fresh = freshNames(root, turn, added);
+    const classes = fresh.length ? fresh : added;
     const r = shotSync({ root, path: '/', audit: true, classes, timeoutMs: SHOT_MS });
     if (r.status !== 'ok') return '';
     if (!Array.isArray(r.seen) || !r.seen.length) {

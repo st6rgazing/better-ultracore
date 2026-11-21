@@ -447,7 +447,7 @@ test('Stop fallback: UI files changed and no shot gives the PNG path as addition
   const out = hook('stop-check.js', { session_id: 's', cwd: dir, last_assistant_message: 'Done.' }, home, env);
   assert.strictEqual(out.decision, undefined);
   const text = out.hookSpecificOutput.additionalContext;
-  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change, showing \.card, \.wide: (\S+\.png) \. Read it once/);
+  assert.match(text, /^You changed UI files and took no screenshot\. Here is http:\/\/localhost:\d+\/ after your change, showing \.wide: (\S+\.png) \. Read it once/);
   const png = text.match(/: (\S+\.png) /)[1];
   assert.strictEqual(fs.readFileSync(png, 'utf8'), 'PNGDATA');
   fs.rmSync(png);
