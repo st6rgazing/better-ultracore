@@ -191,4 +191,11 @@ test('browserEnv lends a clone a Playwright and the browser cache', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('each round records its own tokens, turns and time', () => {
+  const { roundEntry } = require('../bench/run');
+  const e = roundEntry(1, 'no', { result: 'ok', usage: { input_tokens: 5, cache_read_input_tokens: 10, output_tokens: 2 }, num_turns: 4, elapsed_ms: 900, total_cost_usd: 0.1 }, true, { stat: [], patch: '' });
+  assert.deepStrictEqual([e.tokens, e.num_turns, e.elapsed_ms, e.accept_pass], [17, 4, 900, true]);
+  assert.strictEqual(roundEntry(0, 'x', { result: null }, null, { stat: [], patch: '' }).tokens, null);
+});
+
 // more tests below

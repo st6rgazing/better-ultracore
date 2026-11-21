@@ -170,6 +170,9 @@ function roundEntry(round, prompt, run, pass, diff) {
     lines_changed: diff.stat.reduce((n, x) => n + x.added + x.deleted, 0),
     patch: diff.patch,
     exit: run.exit ?? null, timed_out: !!run.timed_out, total_cost_usd: run.total_cost_usd ?? null,
+    // This call alone, not cumulative: what one round cost in tokens, agent turns and wall time.
+    tokens: run.model_usage || run.usage ? (({ input, output }) => input + output)(sumTokens(run.model_usage, run.usage)) : null,
+    num_turns: run.num_turns ?? null, elapsed_ms: run.elapsed_ms ?? null,
   };
 }
 
