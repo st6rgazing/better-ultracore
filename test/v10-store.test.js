@@ -298,3 +298,32 @@ test('bumpSessions appends bump sources once per session', () => {
     { session: 'C', repo: 'r1', ts: new Date(T0 + 5 * DAY).toISOString(), h: 'cccccccccccc', origin: 'bump' },
   ]);
 });
+
+test('asOf: excluding one of two sessions gives count 1, excluding both removes the rule, an early before removes it', () => {
+  const rule = { ...store.normalize({ ...RULE, count: 6, sources: [src('A', 0), src('B', 10, 'bbbbbbbbbbbb')] }).rule, violations: 2, last_violation: 'x', byRepo: { r1: { hits: 1, misses: 3 } } };
+  const all = store.asOf([rule], {});
+  assert.deepStrictEqual([all[0].count, all[0].last_seen], [2, src('B', 10).ts]);
+  const [noA] = store.asOf([rule], { excludeSessions: ['A'] });
+  assert.deepStrictEqual([noA.count, noA.last_seen, noA.sources.map((s) => s.session), noA.violations, noA.byRepo, noA.last_violation], [1, src('B', 10).ts, ['B'], 0, undefined, undefined]);
+  assert.deepStrictEqual(store.asOf([rule], { excludeSessions: ['A', 'B'] }), []);
+  assert.deepStrictEqual(store.asOf([rule], { before: new Date(T0 - DAY).toISOString() }), []);
+  assert.deepStrictEqual(store.asOf([rule], { before: src('A', 0).ts }), []);
+  const [mid] = store.asOf([rule], { before: T0 + 5 * DAY });
+  assert.deepStrictEqual([mid.count, mid.last_seen], [1, src('A', 0).ts]);
+  assert.strictEqual(rule.count, 6);
+});
+
+test('asOf drops rules without a dated learn source and keeps bumps only beside one', () => {
+  const mk = (id, extra) => store.normalize({ ...RULE, id, ...extra }).rule;
+  const rules = [
+    mk('no-sources', {}),
+    mk('habit-rule', { origin: 'habit', pinned: true }),
+    mk('bump-only', { sources: [src('A', 0, 'aaaaaaaaaaaa', { origin: 'bump' })] }),
+    mk('undated', { sources: ['aaaaaaaaaaaa'] }),
+    mk('learn-and-bump', { sources: [src('A', 0), src('B', 3, '', { origin: 'bump' }), src('C', 4, '', { origin: 'bump' })] }),
+  ];
+  const out = store.asOf(rules, { excludeSessions: ['C'] });
+  assert.deepStrictEqual(out.map((r) => [r.id, r.count, r.bumped_sessions]), [['learn-and-bump', 2, ['B']]]);
+  assert.deepStrictEqual(store.asOf(rules, { excludeSessions: ['A'] }), []);
+  assert.throws(() => store.asOf(rules, { before: 'not a date' }), /bad --before/);
+});
