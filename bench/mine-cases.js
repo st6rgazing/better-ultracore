@@ -175,7 +175,7 @@ function candidate(turns, end, P, C, far) {
   const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
   const id = `${P.session.slice(0, 8)}-${P.n}`;
   return {
-    id, ...(C.queued || far ? { key: `${id}>${C.n}` } : {}),
+    id, ...(far || !/^\d/.test(C.n) ? { key: `${id}>${C.n}` } : {}),
     session: P.session, idx: P.idx, turns: turns.length, repo, ref,
     p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
     c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, queued: !!C.queued, cue: isCue(C.text), visible: minerVisible(C.text) },

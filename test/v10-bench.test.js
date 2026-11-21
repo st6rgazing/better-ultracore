@@ -168,6 +168,8 @@ test('parseSession: a message typed while the agent was busy is a turn, once, wi
     ]);
     assert.strictEqual(turns[1].edits, 1);
     assert.strictEqual(turns[2].image, true);
+    // a pair that ends in a queued turn carries that turn in its label key; a pair of typed turns does not
+    assert.deepStrictEqual(mc.triples(file).map((c) => c.key), ['11111111-000>q000', '11111111-q000>q001', undefined, undefined]);
     assert.strictEqual(turns[1].cwd, '/r');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
