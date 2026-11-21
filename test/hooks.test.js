@@ -256,6 +256,16 @@ test('fixed lines stay within 500 chars and keep intent and effect probe for a s
   assert.match(ctx, /runtime effect/);
 });
 
+test('degree feedback on a follow-up turn replaces the intent line with the overshoot line', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  hook('inject.js', { prompt: 'make the menu simpler', cwd: dir, session_id: 'o1' }, home);
+  const ctx = hook('inject.js', { prompt: 'not that plain', cwd: dir, session_id: 'o1' }, home).hookSpecificOutput.additionalContext;
+  assert.match(ctx, /You overshot/);
+  assert.doesNotMatch(ctx, /where the user will see it|Read the request literally/);
+  assert.ok(ctx.length <= 500, String(ctx.length));
+});
+
 test('a stated commit habit is injected on later edits and the stop hook blocks uncommitted work once', () => {
   const dir = repo();
   const home = tmp('buc-home-');
