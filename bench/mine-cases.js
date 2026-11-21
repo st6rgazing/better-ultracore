@@ -413,4 +413,23 @@ function checkManifest(root, m) {
   return bad.sort();
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, DEFAULT_QUOTAS };
+function parseArgs(argv) {
+  const f = { _: [] };
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith('--')) f[argv[i].slice(2)] = argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true;
+    else f._.push(argv[i]);
+  }
+  return f;
+}
+
+const readJsonl = (p) => fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+// Everything the criteria need besides the candidate itself.
+function context(cands, f) {
+  const rules = f.rules && fs.existsSync(f.rules) ? JSON.parse(fs.readFileSync(f.rules, 'utf8')) : [];
+  const labels = f.labels && fs.existsSync(f.labels) ? JSON.parse(fs.readFileSync(f.labels, 'utf8')) : {};
+  const visible = cands.filter((c) => c.c.visible).map((c) => ({ session: c.session, idx: c.c.idx, text: c.c.text }));
+  return { rules, labels, visible, used: f.existing ? usedTurns(cands, f.existing) : [], skipRepos: f['skip-repos'] ? String(f['skip-repos']).split(',') : [], allowTemp: !!f['allow-temp'] };
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, DEFAULT_QUOTAS };
