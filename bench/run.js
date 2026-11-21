@@ -163,6 +163,15 @@ function roundEntry(round, prompt, run, pass, diff) {
   };
 }
 
+// Rewrites a rules.json without the given ids; returns the ids it removed.
+function dropRules(file, ids) {
+  if (!ids.length || !fs.existsSync(file)) return [];
+  const rules = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const gone = rules.filter((r) => ids.includes(r.id)).map((r) => r.id);
+  if (gone.length) fs.writeFileSync(file, `${JSON.stringify(rules.filter((r) => !ids.includes(r.id)), null, 2)}\n`);
+  return gone;
+}
+
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
 function writeClaudeMd(dir, bucHome) {
@@ -309,5 +318,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules };
 if (require.main === module) main(process.argv.slice(2));
