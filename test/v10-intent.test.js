@@ -123,3 +123,11 @@ test('the hook injects the self line, and BUC_OFF=self or "intent": "regex" rest
   assert.match(conf, /where the user will see it/);
   assert.strictEqual(intent.intentMode(repo()), 'self');
 });
+
+test('a commit habit stated in one repo is not injected in another', () => {
+  const home = tmp('buc-home-');
+  const a = repo();
+  inject({ prompt: 'always commit after each small change', cwd: a, session_id: 'h1' }, home);
+  assert.match(inject({ prompt: 'add a footer', cwd: a, session_id: 'h2' }, home), /Commit after each small completed change/);
+  assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'h3' }, home), /Commit after each small completed change/);
+});

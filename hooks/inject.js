@@ -75,7 +75,7 @@ function run(input) {
   const root = tryGit(cwd, 'rev-parse', '--show-toplevel');
   const repo = root ? repoKey(root.trim()) : null;
   try { feedback.onPrompt({ prompt, sessionId, repo }); } catch { /* feedback is best effort */ }
-  habits.capture(prompt);
+  habits.capture(prompt, repo);
   const { matched: all, kind } = retrieve({ prompt, cwd, rules: store.loadRules(), repo });
   const fixed = [];
   if (root) {
