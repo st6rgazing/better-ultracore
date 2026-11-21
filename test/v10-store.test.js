@@ -84,3 +84,13 @@ test('recordRepo defaults its time to BUC_NOW', () => {
   withEnv({ BUC_NOW: '2026-05-05T00:00:00.000Z' }, () => store.recordRepo('r1', 'edit', 's1'));
   assert.strictEqual(store.repoState('r1').events[0].ts, '2026-05-05T00:00:00.000Z');
 });
+
+test('setRepo sets and removes fields and keeps events', () => {
+  fresh();
+  store.recordRepo('r1', 'edit', 's1', 1700000000000);
+  assert.strictEqual(store.setRepo('r1', { handsOff: 'on', events: [] }).handsOff, 'on');
+  assert.strictEqual(store.repoState('r1').events.length, 1);
+  store.setRepo('r1', { handsOff: undefined });
+  assert.ok(!('handsOff' in store.repoState('r1')));
+  assert.strictEqual(store.setRepo('', { handsOff: 'on' }), null);
+});
