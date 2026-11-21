@@ -21,3 +21,29 @@ test('isSmall is true for one short request and false for lists, breadth and lon
   const big = ['ultracode refactor the whole store', 'ultracode\n1. add login\n2. add logout', 'fix every page that uses the old header', `ultracode ${'word '.repeat(30)}`, 'ultracode', ''];
   for (const p of big) assert.strictEqual(orch.isSmall(p), false, p);
 });
+
+function withEnv(env, fn) {
+  const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try { return fn(); } finally {
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test('line picks one fixed line under 80 chars, or none', () => withEnv({ BUC_OFF: '', BUC_NOW: '1700000000000' }, () => {
+  for (const l of [orch.SOLO, orch.SIZED, orch.NOT_OPTIN, orch.MIDTURN]) assert.ok(l.length < 80, l);
+  assert.strictEqual(orch.line('fix the typo in the footer'), '');
+  assert.strictEqual(orch.line('ultracode fix the typo in the footer'), orch.SOLO);
+  assert.strictEqual(orch.line('ultracode migrate every route to the new router'), orch.SIZED);
+  assert.strictEqual(orch.line('what does the ultracode keyword do'), orch.NOT_OPTIN);
+  const running = { agents: 3, agentAt: 1700000000000 - 60000 };
+  assert.strictEqual(orch.line('also skip the tests folder', { turn: running }), orch.MIDTURN);
+  assert.strictEqual(orch.line('also skip the tests folder', { turn: { agents: 3, agentAt: 1700000000000 - 31 * 60000 } }), '');
+  assert.strictEqual(orch.line('also skip the tests folder', { turn: { toolCalls: 9 } }), '');
+}));
+
+test('line honours the midturn, keyword and solo BUC_OFF names', () => withEnv({ BUC_OFF: 'midturn,keyword,solo', BUC_NOW: '1700000000000' }, () => {
+  assert.strictEqual(orch.line('go on', { turn: { agents: 1, agentAt: 1700000000000 } }), '');
+  assert.strictEqual(orch.line('what is ultracode'), '');
+  assert.strictEqual(orch.line('ultracode fix the typo'), '');
+}));
