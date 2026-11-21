@@ -24,7 +24,7 @@ test('kindOf tells edits, test commands, other runs, agents and read-only comman
   assert.strictEqual(log.kindOf({ tool_name: 'Agent', tool_input: {} }), 'agent');
   assert.strictEqual(log.kindOf({ tool_name: 'Workflow', tool_input: {} }), 'agent');
   assert.strictEqual(log.kindOf({ tool_name: 'Read', tool_input: {} }), '');
-  for (const c of ['npm test', 'npm run test -- --watch=false', 'node --test test/', 'cd api && pytest -q', 'go test ./...', 'npx vitest run', 'cargo test', 'python -m pytest']) {
+  for (const c of ['npm test', 'npm run test -- --watch=false', 'node --test test/', 'cd api && pytest -q', 'go test ./...', 'npx vitest run', 'cargo test', 'python -m pytest', 'dotnet test', 'bin/rails test', './scripts/test.sh']) {
     assert.strictEqual(log.kindOf(bash(c)), 'test', c);
   }
   for (const c of ['node script.js', 'curl -s localhost:3000', 'ls && node build.js']) assert.strictEqual(log.kindOf(bash(c)), 'run', c);
