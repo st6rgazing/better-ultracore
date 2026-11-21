@@ -416,3 +416,19 @@ test('backfill-sources maps rules to mined corrections by keyword and stores no 
   assert.strictEqual(bf.backfill(RULES, turns, { min: 3 })['icons-not-emoji'].length, 0);
 });
 
+test('backfill-sources CLI prints a mapping and leaves rules.json untouched', () => {
+  const fx = fixture();
+  try {
+    const rules = path.join(fx.dir, 'rules.json');
+    fs.writeFileSync(rules, JSON.stringify([{ id: 'fees', when: { keywords: ['fee', 'yearly'] } }]));
+    const before = fs.readFileSync(rules, 'utf8');
+    fs.appendFileSync(fx.file, `\n${JSON.stringify(user(40, 'no the yearly fee', fx.repo))}`);
+    const p = spawnSync('node', [path.join(__dirname, '..', 'bench', 'backfill-sources.js'), '--rules', rules, '--root', fx.root], { encoding: 'utf8' });
+    assert.strictEqual(p.status, 0, p.stderr);
+    const m = JSON.parse(p.stdout);
+    assert.strictEqual(m.fees.length, 1);
+    assert.strictEqual(m.fees[0].repo, fx.repo);
+    assert.strictEqual(fs.readFileSync(rules, 'utf8'), before);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

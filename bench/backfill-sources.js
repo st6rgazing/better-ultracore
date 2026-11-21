@@ -40,4 +40,15 @@ function backfill(rules, turns, { min = 1 } = {}) {
   return out;
 }
 
+// CLI: node bench/backfill-sources.js [--rules ~/.better-ultracore/rules.json] [--root ~/.claude/projects] [--min 1] [--out file]
+function main(argv) {
+  const f = { rules: path.join(os.homedir(), '.better-ultracore', 'rules.json'), root: path.join(os.homedir(), '.claude', 'projects'), min: '1' };
+  for (let i = 0; i < argv.length; i++) f[argv[i].replace(/^--/, '')] = argv[++i];
+  const rules = JSON.parse(fs.readFileSync(f.rules, 'utf8'));
+  const turns = transcripts(f.root).flatMap((file) => parseSession(file).turns);
+  const text = `${JSON.stringify(backfill(rules, turns, { min: parseInt(f.min, 10) }), null, 2)}\n`;
+  if (f.out) fs.writeFileSync(f.out, text); else process.stdout.write(text);
+}
+
 module.exports = { sourceOf, backfill };
+if (require.main === module) main(process.argv.slice(2));
