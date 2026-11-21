@@ -116,4 +116,41 @@ function replay(sessions, { home, learn = true, every = 5, cluster = null, byRep
   }
 }
 
-module.exports = { replay, wouldBump, stripByRepo, freshCandidates, usable };
+const share = (n, d) => (d ? n / d : null);
+
+// Coverage of a list of corrections. `covered` counts those whose request was shown a rule the correction would
+// bump; `recurring` those that mention any rule the store already had, shown or not. confirmed (optional) is a
+// set of indexes into the list that a judge agreed on.
+function coverage(list, confirmed = null) {
+  const covered = list.filter((c) => c.covered.length).length;
+  const recurring = list.filter((c) => c.would_bump.length).length;
+  const out = { corrections: list.length, recurring, covered, coverage: share(covered, list.length), of_recurring: share(covered, recurring) };
+  if (confirmed) {
+    out.confirmed = list.filter((c) => confirmed.has(c)).length;
+    out.confirmed_coverage = share(out.confirmed, list.length);
+  }
+  return out;
+}
+
+// The replay's numbers, with no text in them.
+// confirmed: Set of corrections (objects of run.corrections) a judge said the shown rule really addresses.
+// relevant: {sampled, yes} from a judge over sampled (request, shown rule) pairs: injection precision.
+function metrics(run, { confirmed = null, relevant = null } = {}) {
+  const c = run.corrections;
+  const half = Math.ceil(c.length / 2);
+  const instances = run.injections.reduce((n, x) => n + x.rules.length, 0);
+  const regretted = new Set(c.flatMap((x) => x.regret));
+  return {
+    sessions: run.sessions, turns: run.turns, rules: run.rules.length, archived: run.archived.length, cluster_calls: run.cluster_calls,
+    coverage: coverage(c, confirmed), first_half: coverage(c.slice(0, half), confirmed), second_half: coverage(c.slice(half), confirmed),
+    injection: {
+      turns_with_rules: run.injections.length, share_of_turns: share(run.injections.length, run.turns), rule_instances: instances,
+      // Without a judge the only offline signal: shown rules that the next correction went on to mention.
+      followed_by_matching_correction: c.reduce((n, x) => n + x.covered.length, 0),
+      ...(relevant && { judged: relevant.sampled, relevant: relevant.yes, precision: share(relevant.yes, relevant.sampled) }),
+    },
+    decay_regret: { archived: run.archived.length, regretted_rules: regretted.size, corrections: c.filter((x) => x.regret.length).length },
+  };
+}
+
+module.exports = { coverage, metrics, replay, wouldBump, stripByRepo, freshCandidates, usable };

@@ -410,4 +410,19 @@ test('replay: a recurring correction is covered with learning and not without', 
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('replay metrics: coverage, halves, injection and decay regret', () => {
+  const { metrics, coverage } = require('../bench/replay');
+  const corr = (covered, bump, regret = []) => ({ covered: covered.map((id) => ({ id })), would_bump: bump, regret });
+  const c = [corr([], []), corr([], ['a']), corr(['a'], ['a']), corr(['a', 'b'], ['a', 'b']), corr([], [], ['old'])];
+  const run = { sessions: 4, turns: 20, corrections: c, cluster_calls: 1, rules: [{ id: 'a' }, { id: 'b' }], archived: ['old', 'older'],
+    injections: [{ rules: [{ id: 'a' }] }, { rules: [{ id: 'a' }, { id: 'b' }] }] };
+  const m = metrics(run, { confirmed: new Set([c[2]]), relevant: { sampled: 3, yes: 2 } });
+  assert.deepStrictEqual(m.coverage, { corrections: 5, recurring: 3, covered: 2, coverage: 0.4, of_recurring: 2 / 3, confirmed: 1, confirmed_coverage: 0.2 });
+  assert.deepStrictEqual([m.first_half.corrections, m.first_half.covered, m.second_half.corrections, m.second_half.covered], [3, 1, 2, 1]);
+  assert.deepStrictEqual(m.injection, { turns_with_rules: 2, share_of_turns: 0.1, rule_instances: 3, followed_by_matching_correction: 3, judged: 3, relevant: 2, precision: 2 / 3 });
+  assert.deepStrictEqual(m.decay_regret, { archived: 2, regretted_rules: 1, corrections: 1 });
+  assert.strictEqual(coverage([]).coverage, null);
+  assert.doesNotMatch(JSON.stringify(metrics(run)), /text|prompt|request/);
+});
+
 // more tests below
