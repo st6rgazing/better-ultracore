@@ -174,9 +174,9 @@ function dropRules(file, ids) {
 
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
-function writeClaudeMd(dir, bucHome) {
+function writeClaudeMd(dir, bucHome, exclude = []) {
   const src = bucHome && fs.existsSync(path.join(bucHome, 'rules.json')) ? path.join(bucHome, 'rules.json') : RULES;
-  const rules = JSON.parse(fs.readFileSync(src, 'utf8'));
+  const rules = JSON.parse(fs.readFileSync(src, 'utf8')).filter((r) => !exclude.includes(r.id));
   const file = path.join(dir, 'CLAUDE.md');
   const tracked = spawnSync('git', ['-C', dir, 'ls-files', '--error-unmatch', 'CLAUDE.md']).status === 0;
   fs.appendFileSync(file, `\n# Rules\n\n${rules.map((r) => `- ${r.rule}`).join('\n')}\n`);
@@ -318,5 +318,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd };
 if (require.main === module) main(process.argv.slice(2));
