@@ -84,7 +84,7 @@ Verdict against the pre-registered criteria: **no measurable gain on unseen task
 #### Why it did not transfer
 
 - **The as-of filter removed the personalisation.** It dropped every rule learned in the same session as the case. Most of the user's rules came from one large session that also holds 6 of the 7 held-out cases, so each held-out run kept 0-3 rules, none relevant. The test therefore measured buc's generic layer, not its personalisation.
-- **The generic layer changed nothing.** buc and plain touched the same files and passed and failed the same runs on every held-out case. The generic lines (self-classification, runtime-effect probe) did not change behaviour and added about 30% tokens.
+- **The generic layer changed nothing.** buc and plain touched the same files and passed and failed the same runs on every held-out correction case (on one control buc was worse). The generic lines (self-classification, runtime-effect probe) did not change behaviour and added about 30% tokens.
 - **The failures were neighbouring-state bugs.** The two failing correction cases were stale state on a new game, and a menu with no sound and a size jump. The user already had rules for those, but the filter dropped them, and one would not have matched anyway because matching is keyword-only.
 
 Fixes in progress:
