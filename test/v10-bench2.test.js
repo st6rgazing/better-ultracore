@@ -488,4 +488,27 @@ test('replay CLI runs the three replays with a stand-in model and writes numbers
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('byDay splits a session that spans days into one unit per day', () => {
+  const { allSessions, byDay } = require('../bench/transcripts');
+  const root = tmp('byday');
+  const work = tmp('byday-work');
+  try {
+    // one session: day 1 request and correction, day 3 (2880 minutes later) the same again; and a one-day session between
+    transcript(root, '-Users-x-app', 'long', '2026-05-01', [['u', 0, 'add icons to the toolbar'], ['a', 1, '/app/t.tsx'], ['u', 5, 'no emoji, use the icon set'],
+      ['u', 2880, 'add icons to the sidebar'], ['a', 2881, '/app/s.tsx'], ['u', 2885, 'no emoji please, i said icons']]);
+    transcript(root, '-Users-x-app', 'mid', '2026-05-02', [['u', 0, 'rename the helper']]);
+    const units = byDay(allSessions(root), path.join(work, 'units'));
+    assert.deepStrictEqual(units.map((u) => [u.session, u.turns.length]), [['long@2026-05-01', 2], ['mid', 1], ['long@2026-05-03', 2]]);
+    assert.deepStrictEqual(units[2].turns[0].files, ['/app/s.tsx']);
+    assert.doesNotMatch(fs.readFileSync(units[0].file, 'utf8'), /sidebar/);
+    assert.throws(() => byDay(allSessions(root), path.join(ROOT, 'bench', 'units')), /outside the repo/);
+    // as one session nothing can be learned in time; split by day the second correction is covered
+    const { replay } = require('../bench/replay');
+    const whole = replay(allSessions(root), { home: path.join(work, 'home-whole'), every: 1, cluster: fakeCluster });
+    assert.deepStrictEqual(whole.corrections.map((c) => c.covered.length), [0, 0]);
+    const split = replay(units, { home: path.join(work, 'home-split'), every: 2, cluster: fakeCluster });
+    assert.deepStrictEqual(split.corrections.map((c) => c.covered.length), [0, 1]);
+  } finally { for (const d of [root, work]) fs.rmSync(d, { recursive: true, force: true }); }
+});
+
 // more tests below

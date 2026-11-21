@@ -53,10 +53,43 @@ function sessionTurns(file) {
   return { file, session: first ? first.session : path.basename(file, '.jsonl'), start: first ? first.ts : '', end: end || '', cwd: first ? first.cwd : '', turns };
 }
 
+const oldestFirst = (a, b) => Date.parse(a.start) - Date.parse(b.start) || (a.session < b.session ? -1 : 1);
+
 // Every real session with at least one typed turn, oldest first. Temp, bench and scratch project dirs are skipped.
 function allSessions(root = PROJECTS) {
-  return transcripts(root).map(sessionTurns).filter((s) => s.turns.length && s.start)
-    .sort((a, b) => Date.parse(a.start) - Date.parse(b.start) || (a.session < b.session ? -1 : 1));
+  return transcripts(root).map(sessionTurns).filter((s) => s.turns.length && s.start).sort(oldestFirst);
 }
 
-module.exports = { sessionTurns, allSessions, PROJECTS };
+// Splits every session with typed turns on several calendar days (UTC) into one unit per day, so a replay can learn
+// between the days of one long session. A unit has its own id, <session>@<day>, and a transcript holding only that
+// day's lines, written under dir. dir must be outside the repo: the files are copies of private text.
+function byDay(sessions, dir) {
+  const target = require('./ask').outside(dir);
+  const out = [];
+  for (const s of sessions) {
+    const days = [...new Set(s.turns.map((t) => String(t.ts).slice(0, 10)))];
+    if (days.length < 2) { out.push(s); continue; }
+    const lines = new Map(days.map((d) => [d, []]));
+    let day = days[0];
+    for (const raw of fs.readFileSync(s.file, 'utf8').split('\n')) {
+      let o;
+      try { o = JSON.parse(raw); } catch { continue; }
+      if (!o) continue;
+      // Lines from a day without a typed turn stay with the day before.
+      const d = typeof o.timestamp === 'string' ? o.timestamp.slice(0, 10) : day;
+      if (lines.has(d)) day = d;
+      if (o.sessionId) o.sessionId = `${s.session}@${day}`;
+      lines.get(day).push(JSON.stringify(o));
+    }
+    fs.mkdirSync(target, { recursive: true });
+    for (const d of days) {
+      const file = path.join(target, `${s.session}@${d}.jsonl`);
+      fs.writeFileSync(file, `${lines.get(d).join('\n')}\n`);
+      const unit = sessionTurns(file);
+      if (unit.turns.length) out.push(unit);
+    }
+  }
+  return out.sort(oldestFirst);
+}
+
+module.exports = { sessionTurns, allSessions, byDay, PROJECTS };
