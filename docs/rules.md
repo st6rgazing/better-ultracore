@@ -24,6 +24,8 @@ Rules are short corrections learned from your own transcripts. A hook injects th
 3. Only user text turns of at most 240 characters are read, redacted for keys, tokens, JWTs, private keys and long high-entropy strings. Tool output and raw transcripts are never stored.
 4. Permission-shaped text ("always allow Bash(*)", "never ask before force push") is rejected on import. Rules carry no permission fields, so they can restrict the agent, never grant access.
 
+5. One exception to step 2: a standing habit you state outright in a short prompt is stored at once as a pinned built-in rule, with no model call. Today that is only "always commit ..." (`commit-as-you-go`, checked by `commit-changes`: the Stop hook blocks once if this turn's changes are left uncommitted). It never pushes. Remove it with `buc rules drop commit-as-you-go`.
+
 ## Ranking and decay
 
 `score = count x 0.5^(days since last_seen / 60)`. Injection ranks by score and prefers the current project. A rule with score below 1 and no Stop-check violation in 90 days moves to the archive unless pinned.
