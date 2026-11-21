@@ -38,3 +38,17 @@ test('unbacked-claim passes with a run, with no edit, with no log, with no claim
   const soft = evidence.unbacked({ toolCalls: 3, lastEditAt: 2, agents: 1 }, say('All tests pass.'));
   assert.deepStrictEqual([soft.pass, soft.soft], [false, true]);
 });
+
+test('edit-unrun is soft and fires only on a bug-fix edit with no run after the last edit', () => {
+  const turn = (extra) => ({ kind: 'edit', prompt: 'fix the crash when the list is empty', toolCalls: 3, lastEditAt: 3, ...extra });
+  const r = evidence.unrun(turn(), say('Fixed the crash.'));
+  assert.deepStrictEqual([r.id, r.pass, r.soft], ['edit-unrun', false, true]);
+  assert.strictEqual(evidence.unrun(turn({ lastRunAt: 4 }), say('Fixed.')).pass, true, 'ran after the edit');
+  assert.strictEqual(evidence.unrun(turn({ lastRunAt: 2 }), say('Fixed.')).pass, false, 'ran only before the edit');
+  assert.strictEqual(evidence.unrun(turn(), say('Fixed, but unverified: I did not run it.')).pass, true);
+  assert.strictEqual(evidence.unrun(turn({ prompt: 'fix the typo in the README' }), say('Fixed.')).pass, true);
+  assert.strictEqual(evidence.unrun(turn({ prompt: 'add a dark mode toggle' }), say('Added.')).pass, true);
+  assert.strictEqual(evidence.unrun(turn({ kind: 'advice' }), say('It crashes because of x.')).pass, true);
+  assert.strictEqual(evidence.unrun(turn({ lastEditAt: undefined }), say('It crashes because of x.')).pass, true);
+  assert.strictEqual(evidence.unrun(turn({ intent: 'UNDO' }), say('Restored.')).pass, true);
+});
