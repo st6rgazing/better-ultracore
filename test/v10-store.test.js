@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const store = require('../lib/rules/store');
 const handsoff = require('../lib/handsoff');
+const mine = require('../lib/rules/mine');
 
 const fresh = () => { process.env.BUC_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-v10-')); return process.env.BUC_HOME; };
 const withEnv = (vars, fn) => {
@@ -326,4 +327,32 @@ test('asOf drops rules without a dated learn source and keeps bumps only beside 
   assert.deepStrictEqual(out.map((r) => [r.id, r.count, r.bumped_sessions]), [['learn-and-bump', 2, ['B']]]);
   assert.deepStrictEqual(store.asOf(rules, { excludeSessions: ['A'] }), []);
   assert.throws(() => store.asOf(rules, { before: 'not a date' }), /bad --before/);
+});
+
+const transcript = (dir, name, entries) => {
+  const f = path.join(dir, name);
+  fs.writeFileSync(f, entries.map((e) => JSON.stringify(e)).join('\n'));
+  return f;
+};
+const userTurn = (sessionId, text, timestamp, cwd) => ({ type: 'user', sessionId, timestamp, cwd, message: { role: 'user', content: text } });
+
+test('correctiveTurns returns the turn time, repo and hash', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-mine-'));
+  const f = transcript(dir, 't.jsonl', [
+    userTurn('S1', 'add a header', '2026-06-01T10:00:00.000Z', '/gone/away/myrepo'),
+    userTurn('S1', 'no, only the header', '2026-06-01T10:05:00.000Z', '/gone/away/myrepo'),
+    { type: 'user', sessionId: 'S1', message: { role: 'user', content: 'still broken' } },
+  ]);
+  assert.deepStrictEqual(mine.correctiveTurns(f), [
+    { session_id: 'S1', text: 'no, only the header', repo: 'myrepo', h: store.hash('no, only the header'), ts: '2026-06-01T10:05:00.000Z' },
+    { session_id: 'S1', text: 'still broken', repo: '', h: store.hash('still broken') },
+  ]);
+});
+
+test('repoOf uses the git repo key for a subdirectory of a live repo', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-repo-'));
+  require('node:child_process').execFileSync('git', ['init', '-q', root]);
+  fs.mkdirSync(path.join(root, 'src'));
+  assert.strictEqual(mine.repoOf(path.join(root, 'src')), path.basename(fs.realpathSync(root)));
+  assert.strictEqual(mine.repoOf(''), '');
 });
