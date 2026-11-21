@@ -83,3 +83,21 @@ test('turnFiles maps changed, created and removed paths to their hash before the
   fs.unlinkSync(path.join(dir, 'other.js'));
   assert.deepStrictEqual(check.turnFiles(dir, t), { 'app.js': before, 'new.js': null, 'other.js': git(dir, 'rev-parse', 'HEAD:other.js') });
 });
+
+test('undo-restored fails until the previous turn\'s files are back, and only on an UNDO turn', () => {
+  const dir = repo();
+  const first = turn(dir, 'make the label nicer');
+  write(dir, 'app.js', 'const label = "nicer";\n');
+  write(dir, 'extra.js', 'created\n');
+  const prevFiles = check.turnFiles(dir, first);
+  const t = turn(dir, 'undo that and just show me', { intent: 'UNDO', prevFiles });
+  const r = run('undo-restored', t);
+  assert.strictEqual(r.pass, false);
+  assert.match(r.detail, /app\.js, extra\.js/);
+  assert.strictEqual(run('undo-restored', { ...t, intent: 'MISREAD' }).pass, true);
+  assert.strictEqual(run('undo-restored', { ...t, prevFiles: undefined }).pass, true);
+  git(dir, 'checkout', '--', 'app.js');
+  assert.match(run('undo-restored', t).detail, /differ from before your last turn: extra\.js;/);
+  fs.unlinkSync(path.join(dir, 'extra.js'));
+  assert.strictEqual(run('undo-restored', t).pass, true);
+});
