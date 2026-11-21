@@ -55,9 +55,11 @@ function usable(list, known) {
 // miner would queue, with the request before it: {session, idx, ts, request, text, injected, would_bump, covered,
 // regret}. covered lists the rules that were shown on the request and that the correction would bump.
 function replay(sessions, { home, learn = true, every = 5, cluster = null, byRepo = true, log = () => {} } = {}) {
-  const saved = { BUC_HOME: process.env.BUC_HOME, BUC_NOW: process.env.BUC_NOW };
+  const saved = { BUC_HOME: process.env.BUC_HOME, BUC_NOW: process.env.BUC_NOW, BUC_OFF: process.env.BUC_OFF };
   fs.mkdirSync(home, { recursive: true });
   process.env.BUC_HOME = home;
+  // A run that never learns must not learn through reflections either (lib/reflect.js stores rules with no clustering).
+  if (!learn) process.env.BUC_OFF = [process.env.BUC_OFF, 'reflect'].filter(Boolean).join(',');
   const corrections = [];
   const injections = [];
   const done = new Set();

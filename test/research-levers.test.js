@@ -65,6 +65,27 @@ test('replay records the levers shown on each turn and on the request before a c
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a replay that never learns stores no reflection rule, and BUC_OFF is put back', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { replay } = require('../bench/replay');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-levers-off-')));
+  const dir = path.join(root, 'projects', '-Users-x-app');
+  fs.mkdirSync(dir, { recursive: true });
+  const line = (session, type, min, content) => JSON.stringify({ type, sessionId: session, timestamp: `2026-05-01T10:${String(min).padStart(2, '0')}:00.000Z`, cwd: '/Users/x/app', message: { role: type, content } });
+  for (const s of ['m1', 'm2', 'm3']) {
+    fs.writeFileSync(path.join(dir, `${s}.jsonl`), `${[line(s, 'user', 0, 'make the logo bigger'), line(s, 'assistant', 1, [{ type: 'text', text: 'done' }]), line(s, 'user', 5, 'no, way too big')].join('\n')}\n`);
+  }
+  const before = process.env.BUC_OFF;
+  try {
+    const sessions = require('../bench/transcripts').allSessions(path.join(root, 'projects'));
+    const off = replay(sessions, { home: path.join(root, 'home-off'), learn: false });
+    assert.deepStrictEqual(off.rules, []);
+    assert.strictEqual(process.env.BUC_OFF, before);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('the replay summary lists each lever with its tokens and corrections per 1k', () => {
   const { summary } = require('../bench/replay');
   const cov = { corrections: 2, recurring: 1, covered: 1, covered_learned: 1, coverage: 0.5 };
