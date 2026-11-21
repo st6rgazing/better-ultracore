@@ -37,3 +37,21 @@ test('record numbers the calls of a batch and keeps the last edit, run and test'
   assert.deepStrictEqual(log.record({}, [bash('npm test', { stdout: '# fail 0' })]), { lastRunAt: 1, lastTestAt: 1, lastTestOk: true });
   assert.deepStrictEqual(log.record({ toolCalls: 3 }, [{ tool_name: 'Grep', tool_input: {} }]), {});
 });
+
+test('the tool hook writes the turn log into the turn file', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const store = require('../lib/rules/store');
+  const track = require('../hooks/track');
+  const old = { BUC_HOME: process.env.BUC_HOME, BUC_OFF: process.env.BUC_OFF };
+  process.env.BUC_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-log-'));
+  process.env.BUC_OFF = '';
+  try {
+    track.run({ session_id: 'log', cwd: os.tmpdir(), tool_calls: [{ tool_name: 'Edit', tool_input: {} }, bash('npm test', { stdout: '# fail 0' })] });
+    const t = store.readTurn('log');
+    assert.deepStrictEqual([t.toolCalls, t.lastEditAt, t.lastTestAt, t.lastTestOk], [2, 1, 2, true]);
+  } finally {
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});

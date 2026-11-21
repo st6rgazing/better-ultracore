@@ -405,7 +405,7 @@ test('track works with no turn file, a PostToolUse input and a subagent, and not
     assert.strictEqual(track.run({}), null);
     assert.strictEqual(track.run({ session_id: 'n', tool_calls: [] }), null);
     assert.strictEqual(track.run({ session_id: 'n', hook_event_name: 'PostToolUse', tool_name: 'Edit', tool_input: {} }), null);
-    assert.deepStrictEqual(store.readTurn('n'), { session_id: 'n', toolCalls: 1 });
+    assert.deepStrictEqual(store.readTurn('n'), { session_id: 'n', toolCalls: 1, lastEditAt: 1 });
     assert.strictEqual(track.run({ ...batch(30), session_id: 'n', agent_id: 'agent-1' }), null);
     assert.strictEqual(store.readTurn('n').toolCalls, 1, 'subagent calls are not counted');
     track.run({ session_id: 'n', tool_calls: [{ tool_name: 'Bash', tool_input: { command: 'node /p/bin/buc-shot --path /' } }] });

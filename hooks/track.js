@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const store = require('../lib/rules/store');
+const turnlog = require('../lib/turnlog');
 
 const SMALL = 20; // turns with a fixed reading or a correction
 const LARGE = 45; // every other turn
@@ -31,7 +32,7 @@ function run(input) {
   const turn = store.readTurn(sessionId) || {};
   const before = Number(turn.toolCalls) || 0;
   const after = before + calls.length;
-  const patch = { toolCalls: after };
+  const patch = { toolCalls: after, ...turnlog.record(turn, calls) };
   if (calls.some((c) => c && c.tool_name === 'Bash' && SHOT.test(String((c.tool_input || {}).command || '')))) patch.shotAt = store.now();
   store.patchTurn(sessionId, patch);
   const root = turn.root || input.cwd || process.cwd();
