@@ -84,3 +84,9 @@ test('correctionLine fires only after a previous turn', () => {
   assert.match(correctionLine('no wait undo ur changes just show me how', true), /text only/);
   assert.strictEqual(correctionLine('add a logout button', true), '');
 });
+
+test('exact change-X-to-Y edits keep the literal line', () => {
+  assert.match(intentLine('change the guide symbol to be a ? and change log symbol to current guide'), /touch only what is named/);
+  assert.match(intentLine('rename the Save button to Store'), /touch only what is named/);
+  assert.match(intentLine('make it so guests see all options greyed out'), /where the user will see it/);
+});
