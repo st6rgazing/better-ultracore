@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "cases": {
+    "ho-01": {
+      "accept.sh": "6faca3e7390139d2eb02e73448249eb711f66fb3983753e669aaf789c424795d",
+      "case.json": "9623b14392f878a14d954c40b7e3298e601261d38c893fbd364783abdd253e07",
+      "eval.mts": "756f7b506d65f35cb2712159aa85109624308eefc44aa03c8d8e49fc7981c081",
+      "followup.txt": "15e31dfb6b5c974e8c9121ce37adccd9c976f7165840596e869af669f6c18729",
+      "prompt.txt": "1a9aa5a6b42a6d7b8e7b9b46178a68c81c65a9abcbb70134c74876ddd070926b",
+      "setup.sh": "bcafe5fb44b85d4f2c5173ae486c21d0ba16455124166782be780fc38f023d69",
+      "solve-notes.md": "1377b04ea69cccbfb2efc13a59644e31afc744d64d7be71720e7feb12a9c9445",
+      "solve.sh": "9defadc6326f7be15bd34108a60423adaf48058a2aa8285f7f743616ef5ce7df",
+      "wrong.sh": "5f65d6183ba219a0b2c64fa67439dda5291a6607ef22fdddc8f6d381b8071e7b"
+    },
+    "ho-02": {
+      "accept.sh": "507dc9a6df6302a2b9241ab97f787ec8f0d2404f2d49cc93a0adca564f81d4ce",
+      "case.json": "5c0e3491ffb4cdd13f44c3ac35373af508ad436cdd4d3fc2d6d1b544aa95eb7e",
+      "followup.txt": "9e4314b32822fd12b28245f76e8d7355ae9155cb3e690de8b06e6d4bd4cecb70",
+      "probe.mjs": "ee4381dba388b1a9afe747c059707e179316825dc7ffc9af3ba3bb6648915437",
+      "prompt.txt": "26087ffc39e5d39466a263d70a1fa787b6a79ecb7aa4bdb6ad670a03c2e3fa2d",
+      "setup.sh": "19edba853d275fa08e961f355edd980b6b5776c7bf67f9e16a08e523d037aff6",
+      "solve-notes.md": "117f41ace7c57b2ee1acf12bb85e3cd8a64872b257c054c8bb55271939521c0b",
+      "solve.sh": "03c091372a28e62bda7b4af95357f0dc42e067a5460d82877a8075a598944f54",
+      "wrong.sh": "7d52f602be90fa7291f8c1d199aff2731dda8d932d36154c790fa7dca62dd0eb"
+    },
+    "ho-ctl-01": {
+      "accept.sh": "6177bd37137d78c79507820dff9b67d3cb3c955475cac936946753cce1c818dd",
+      "case.json": "3efcbd6c21f5d081da78bc776ea00fe07ed59a7bf806f39936925b73daece54f",
+      "eval.mts": "6cd178bbe916439f7d9226a10979a9b5ecf47541c54dee5d3366f4601058f58f",
+      "prompt.txt": "7b49040a6a559f9cd54910834b560953b82ac8e6b63f7ab82012e34ef5c1e108",
+      "setup.sh": "801ea966666c619e14593b824ad35b68a182c0796d1003293b8685f46e2c2cf3",
+      "solve-notes.md": "03be574b45a2f7c44126c38d8ab52f954ef7523983d06cbd62015e52e511aeae",
+      "solve.sh": "fd1b0b9c471d0db70ef53b63d83401371cf3ff6a8eacb198154204c06be1c75d"
+    },
+    "ho-ctl-02": {
+      "accept.sh": "d2f2eebc13d6be707a39285a00527dbdc39939f7f55a51929d6d698d8de92176",
+      "case.json": "6d3d7b49c38d130cb43a963e930fa2cee59643a25ec21271204be224abac33ba",
+      "prompt.txt": "6965337a02c1651c2e42ca5c9f25553ddd828f8dc5139794ef9588be22fe22f4",
+      "setup.sh": "23e7339193ba5577f4fc961e45cd184afb89a007f079008d81ed02496ec27366",
+      "solve-notes.md": "5caca1c19a96d39c640e09900efdba65fd30cf53cdc8babf2983c1e5fd875bb5",
+      "solve.sh": "50050cc0e0612971e5c0e842d165cb5f16eb304ccf7c9c53d3b50f0d0be023a0"
+    },
+    "ho-ctl-03": {
+      "accept.sh": "e1ba00f04957de57fcc64b6f7a9fd45e8bad5ea920ec88ec35fbc80ca3869f6b",
+      "case.json": "680e857706ce20d1f85132768efc89dd45a387d7bbc7fdfa90a9178495043228",
+      "prompt.txt": "50cf7129d7899ad290baac6310d58d775bd01d1a60ffbc695bbd6d03ab680a16",
+      "setup.sh": "fb067200d6a0b46f8ab0f6db8167dd2cde488213f3275c3e3180796fc36bb390",
+      "solve-notes.md": "4baff26fa066c210dd8c619d3ece0d53002496997931e46a1d92b69199db713d",
+      "solve.sh": "7c7148e2677d97ad1706940f52061845229008c0f7ec8b40c253e081ed7434dc"
+    }
+  }
+}

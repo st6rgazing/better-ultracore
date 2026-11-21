@@ -432,3 +432,17 @@ test('backfill-sources CLI prints a mapping and leaves rules.json untouched', ()
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+
+test('the committed held-out manifest holds only case ids, file names and sha256 hashes', () => {
+  const m = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bench', 'heldout.manifest.json'), 'utf8'));
+  assert.deepStrictEqual(Object.keys(m).sort(), ['algorithm', 'cases', 'version']);
+  assert.strictEqual(m.algorithm, 'sha256');
+  for (const [id, files] of Object.entries(m.cases)) {
+    assert.match(id, /^ho-(ctl-)?\d\d$/);
+    for (const f of ['setup.sh', 'accept.sh', 'solve.sh', 'prompt.txt', 'case.json']) assert.ok(files[f], `${id} ${f}`);
+    for (const [name, h] of Object.entries(files)) {
+      assert.match(name, /^[a-z-]+\.(sh|txt|json|md|mts|mjs)$/);
+      assert.match(h, /^[0-9a-f]{64}$/);
+    }
+  }
+});
