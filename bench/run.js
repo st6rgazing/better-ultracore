@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// 4-arm benchmark harness. See bench/README.md.
+// Benchmark harness: plain, plain-claudemd, buc, buc-regex and ultra arms. See bench/README.md.
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -20,6 +20,8 @@ const ARMS = {
   plain: { noPlugin: true, budgetMult: 1, extra: [] },
   'plain-claudemd': { noPlugin: true, budgetMult: 1, claudeMd: true, extra: [] },
   buc: { noPlugin: false, budgetMult: 1, bucHome: true, extra: [] },
+  // Ablation: the plugin with the v9 fixed intent lines instead of self-classification (BUC_OFF=self).
+  'buc-regex': { noPlugin: false, budgetMult: 1, bucHome: true, off: ['self'], extra: [] },
   ultra: { noPlugin: true, budgetMult: 2, extra: ['--settings', '{"ultracode":true,"workflowSizeGuideline":"small"}', '--effort', 'xhigh'] },
 };
 
@@ -225,6 +227,11 @@ function asOfHome(c, spec, bucHome, outDir, sourcesFile) {
   return { home: outDir, before, excluded_sessions: sessions, kept: info.kept, dropped: info.dropped };
 }
 
+// BUC_OFF for an arm: the arm's switches added to whatever the caller already set.
+function armOff(arm, current = '') {
+  return [...new Set([...String(current).split(','), ...(ARMS[arm].off || [])].map((x) => x.trim()).filter(Boolean))].join(',');
+}
+
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
 // Uses the same rules the buc arm gets (--buc-home), appended so a repo's own CLAUDE.md is kept.
 function writeClaudeMd(dir, bucHome, exclude = []) {
@@ -258,6 +265,7 @@ function liveRun(c, arm, rep, o) {
       if (home) fs.cpSync(home, env.BUC_HOME, { recursive: true }); else fs.mkdirSync(env.BUC_HOME);
       dropRules(path.join(env.BUC_HOME, 'rules.json'), exclude);
     }
+    if (ARMS[arm].off) env.BUC_OFF = armOff(arm, env.BUC_OFF);
     const prompt = read(c, 'prompt.txt');
     const base = (spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout || '').trim();
     const preUntracked = (spawnSync('git', ['-C', dir, 'ls-files', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' }).stdout || '').split('\0').filter(Boolean);
@@ -393,5 +401,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds, dropRules, writeClaudeMd, caseMeta, mergeSources, asOfHome, armOff };
 if (require.main === module) main(process.argv.slice(2));

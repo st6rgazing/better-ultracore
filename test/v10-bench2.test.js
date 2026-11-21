@@ -148,4 +148,24 @@ test('fake claude: --rules-as-of case gives the buc and CLAUDE.md arms the cut s
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('buc-regex arm runs the plugin with self-classification off', () => {
+  const { ARMS, armOff } = require('../bench/run');
+  assert.strictEqual(ARMS['buc-regex'].noPlugin, false);
+  assert.strictEqual(armOff('buc-regex'), 'self');
+  assert.strictEqual(armOff('buc-regex', 'shot, self'), 'shot,self');
+  assert.strictEqual(armOff('buc', 'shot'), 'shot');
+  const root = tmp('regex');
+  try {
+    heldoutCase(root, 'ho-a');
+    const log = path.join(root, 'seen.log');
+    const bin = fakeClaude(root, `echo "off=$BUC_OFF home=$BUC_HOME args=$*" >> "${log}"`);
+    const r = bench(['--arms', 'buc,buc-regex', '--cases', 'ho-a', '--out', path.join(root, 'out.json')], root, { BUC_CLAUDE_BIN: bin, BUC_OFF: '' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const [buc, regex] = fs.readFileSync(log, 'utf8').trim().split('\n').filter((l) => !l.includes('--resume'));
+    assert.match(buc, /^off= home=\S+buc-home /);
+    assert.match(regex, /^off=self home=\S+buc-home /);
+    assert.match(regex, /--plugin-dir/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
