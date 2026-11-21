@@ -284,6 +284,14 @@ test('criteria: each mechanical reject has its reason', () => {
   assert.strictEqual(mc.rejectControl(cand({ ack: true }), ctl), 'next turn has a correction cue');
 });
 
+test('the diff limit is 300 lines unless the context raises it', () => {
+  const labels = { 'aaaaaaaa-001': { label: 'correction' } };
+  const big = cand({ fix_lines: 450 });
+  assert.strictEqual(mc.rejectCorrection(big, { labels }), 'base..fix over 300 lines');
+  assert.strictEqual(mc.rejectCorrection(big, { labels, maxLines: 600 }), null);
+  assert.strictEqual(mc.rejectCorrection(cand({ fix_lines: 601 }), { labels, maxLines: 600 }), 'base..fix over 600 lines');
+});
+
 test('labelOf: a label written for the next typed turn does not apply once C is a queued message', () => {
   const labels = { 'aaaaaaaa-001': { label: 'correction' }, 'aaaaaaaa-001>q002': { label: 'new-request' } };
   assert.strictEqual(mc.labelOf({ id: 'aaaaaaaa-001' }, labels).label, 'correction');

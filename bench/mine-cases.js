@@ -296,7 +296,8 @@ function rejectCorrection(c, ctx) {
   if (c.fix === c.base) return 'fix equals base';
   if (!c.work) return 'no assistant edits after P';
   if (c.fix_lines === null || c.fix_lines === 0) return 'empty base..fix';
-  if (c.fix_lines > 300) return 'base..fix over 300 lines';
+  const max = ctx.maxLines || 300;
+  if (c.fix_lines > max) return `base..fix over ${max} lines`;
   const label = labelOf(c, ctx.labels);
   if (!label) return 'unlabelled';
   if (label.label !== 'correction') return `C is not a correction (${label.label})`;
@@ -462,7 +463,7 @@ function context(cands, f) {
   const rules = f.rules && fs.existsSync(f.rules) ? JSON.parse(fs.readFileSync(f.rules, 'utf8')) : [];
   const labels = f.labels && fs.existsSync(f.labels) ? JSON.parse(fs.readFileSync(f.labels, 'utf8')) : {};
   const visible = cands.filter((c) => c.c.visible).map((c) => ({ session: c.session, idx: c.c.idx, text: c.c.text }));
-  return { rules, labels, visible, used: f.existing ? usedTurns(cands, f.existing) : [], skipRepos: f['skip-repos'] ? String(f['skip-repos']).split(',') : [], allowTemp: !!f['allow-temp'] };
+  return { rules, labels, visible, used: f.existing ? usedTurns(cands, f.existing) : [], skipRepos: f['skip-repos'] ? String(f['skip-repos']).split(',') : [], allowTemp: !!f['allow-temp'], maxLines: f['max-lines'] ? parseInt(f['max-lines'], 10) : 300 };
 }
 
 // Steps 2 and 3 for both kinds; returns the picks and every reject with its reason.
