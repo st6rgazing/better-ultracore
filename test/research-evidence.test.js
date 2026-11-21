@@ -12,3 +12,29 @@ test('claims finds stated test and verification results and skips plans, doubts,
   for (const r of ['Not verified.', 'This is unverified.', 'You can verify it with curl.', 'I have not tested this.', 'To verify, open the page.']) assert.strictEqual(evidence.claims(r).verified, false, r);
   assert.deepStrictEqual(evidence.claims(''), { tests: false, verified: false });
 });
+
+const say = (text) => ({ last_assistant_message: text });
+
+test('unbacked-claim blocks a tests-pass claim with no run after an edit or a failed last run', () => {
+  const r = evidence.unbacked({ toolCalls: 3, lastEditAt: 3 }, say('Fixed it. All tests pass.'));
+  assert.deepStrictEqual([r.id, r.pass, r.soft], ['unbacked-claim', false, false]);
+  assert.match(r.detail, /no test command ran/);
+  const failed = evidence.unbacked({ toolCalls: 5, lastEditAt: 2, lastRunAt: 4, lastTestAt: 4, lastTestOk: false }, say('All tests pass.'));
+  assert.match(failed.detail, /last test run this turn failed/);
+  assert.strictEqual(evidence.unbacked({ toolCalls: 4, lastEditAt: 4 }, say('I verified the page loads.')).pass, false);
+});
+
+test('unbacked-claim passes with a run, with no edit, with no log, with no claim, and is soft after a subagent', () => {
+  const ok = [
+    [{ toolCalls: 5, lastEditAt: 2, lastRunAt: 4, lastTestAt: 4, lastTestOk: true }, 'All tests pass.'],
+    [{ toolCalls: 5, lastEditAt: 2, lastRunAt: 4 }, 'All tests pass.'],
+    [{ toolCalls: 2 }, 'The tests pass, as before.'],
+    [{}, 'All tests pass.'],
+    [{ toolCalls: 3, lastEditAt: 3 }, 'Changed the label. I did not run the tests.'],
+    [{ toolCalls: 5, lastEditAt: 3 }, 'I verified the file reads back as expected.'],
+    [{ toolCalls: 6, lastEditAt: 6, lastTestAt: 5, lastTestOk: true }, 'All tests pass.'],
+  ];
+  for (const [turn, reply] of ok) assert.strictEqual(evidence.unbacked(turn, say(reply)).pass, true, reply);
+  const soft = evidence.unbacked({ toolCalls: 3, lastEditAt: 2, agents: 1 }, say('All tests pass.'));
+  assert.deepStrictEqual([soft.pass, soft.soft], [false, true]);
+});
