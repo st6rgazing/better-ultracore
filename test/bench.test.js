@@ -63,6 +63,18 @@ test('sim-user: pass needs no intervention; a question gets the best-reading rep
   assert.strictEqual(r.final_pass, true);
 });
 
+test('sim-user: a first-turn question is answered with the real follow-up, which is sent once', () => {
+  const { simulate } = require('../bench/sim-user');
+  const sent = [];
+  const replies = ['Did you mean the intro?', 'done'];
+  const r = simulate({ first: { result: 'Which screen?' }, accept: () => false, followup: 'the intro, not the menu', resume: (m) => { sent.push(m); return { result: replies.shift() }; } });
+  assert.deepStrictEqual(sent, ['the intro, not the menu', 'use your best reading of what I asked']);
+  assert.strictEqual(r.interventions, 2);
+  const plain = [];
+  simulate({ first: { result: 'done' }, accept: () => false, followup: 'fix the intro', resume: (m) => { plain.push(m); return { result: 'done' }; } });
+  assert.deepStrictEqual(plain, ['fix the intro', 'no, read what i asked again']);
+});
+
 test('roundEntry keeps the prompt, both ends of a long reply, the accept result and the patch', () => {
   const { roundEntry } = require('../bench/run');
   const diff = { stat: [{ file: 'a.js', added: 2, deleted: 1 }], patch: 'diff --git a/a.js b/a.js' };
