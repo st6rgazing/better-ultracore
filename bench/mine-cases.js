@@ -29,16 +29,39 @@ function relayed(text) {
   return out.filter(Boolean);
 }
 
+// A message the user typed while the agent was busy: stored as a queued_command attachment, not as a user entry.
+function queuedHuman(o) {
+  const a = o && o.type === 'attachment' && o.attachment;
+  if (!a || a.type !== 'queued_command' || !a.origin || a.origin.kind !== 'human') return null;
+  const blocks = typeof a.prompt === 'string' ? [{ type: 'text', text: a.prompt }] : Array.isArray(a.prompt) ? a.prompt : [];
+  const text = blocks.filter((b) => b && b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n').trim();
+  return text ? { text, image: blocks.some((b) => b && b.type === 'image') } : null;
+}
+
 // One transcript -> ordered user text turns, each with the tool calls made before the next user turn.
-// Sidechain, meta, tool-result and harness entries are not turns.
+// Sidechain, meta, tool-result and harness entries are not turns. Queued messages are turns; one that is
+// also stored as a typed entry within two minutes is kept once, as the typed entry. `n` names a turn in ids:
+// typed turns count 000, 001, ... as before, queued ones q000, q001, ...
 function parseSession(file) {
   const turns = [];
   let cur = null;
   let end = null;
+  let typed = 0;
+  let queued = 0;
+  const twin = (text, ts, isQueued) => turns.find((t) => !!t.queued === isQueued && t.text === text && Math.abs(new Date(ts) - new Date(t.ts)) <= 120000);
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     let o;
     try { o = JSON.parse(line); } catch { continue; }
-    if (!o || !o.message || o.isSidechain) continue;
+    if (!o || o.isSidechain) continue;
+    const q = queuedHuman(o);
+    if (q) {
+      if (o.timestamp) end = o.timestamp;
+      if (HARNESS.test(q.text) || twin(q.text, o.timestamp, false)) continue;
+      cur = { session: o.sessionId || path.basename(file, '.jsonl'), n: `q${String(queued++).padStart(3, '0')}`, queued: true, ts: o.timestamp, text: q.text, cwd: o.cwd || (cur && cur.cwd) || null, branch: o.gitBranch || (cur && cur.branch) || null, image: q.image, tools: 0, edits: 0, commits: 0, spawns: 0 };
+      turns.push(cur);
+      continue;
+    }
+    if (!o.message) continue;
     if (o.timestamp) end = o.timestamp;
     const c = o.message.content;
     if (o.type === 'assistant' && cur && Array.isArray(c)) {
@@ -62,9 +85,12 @@ function parseSession(file) {
       if (!human.length) continue;
       text = human.join('\n');
     } else if (HARNESS.test(text)) continue;
-    cur = { session: o.sessionId || path.basename(file, '.jsonl'), idx: turns.length, ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: 0, edits: 0, commits: 0, spawns: 0 };
+    const dup = twin(text, o.timestamp, true);
+    if (dup) turns.splice(turns.indexOf(dup), 1);
+    cur = { session: o.sessionId || path.basename(file, '.jsonl'), n: String(typed++).padStart(3, '0'), ts: o.timestamp, text, cwd: o.cwd || null, branch: o.gitBranch || null, image: attached || blocks.some((b) => b && b.type === 'image') || /\[Image #\d+\]/.test(text), tools: dup ? dup.tools : 0, edits: dup ? dup.edits : 0, commits: dup ? dup.commits : 0, spawns: dup ? dup.spawns : 0 };
     turns.push(cur);
   }
+  turns.forEach((t, i) => { t.idx = i; });
   return { turns, end };
 }
 
@@ -147,10 +173,10 @@ function triples(file) {
     const fixStat = repo ? diffStat(repo, shas.base, shas.fix) : { lines: null, files: [] };
     const doneStat = repo ? diffStat(repo, shas.base, shas.done) : { lines: null, files: [] };
     out.push({
-      id: `${P.session.slice(0, 8)}-${String(P.idx).padStart(3, '0')}`,
+      id: `${P.session.slice(0, 8)}-${P.n}`,
       session: P.session, idx: P.idx, turns: turns.length, repo, ref,
       p: { ts: P.ts, text: P.text, image: P.image, tools: P.tools },
-      c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, cue: isCue(C.text), visible: minerVisible(C.text) },
+      c: { idx: C.idx, ts: C.ts, text: C.text, image: C.image, queued: !!C.queued, cue: isCue(C.text), visible: minerVisible(C.text) },
       ack: C.idx > P.idx + 1, n_ts: nTs, work, ...shas,
       fix_lines: fixStat.lines, fix_files: fixStat.files, done_lines: doneStat.lines, done_files: doneStat.files,
     });
@@ -490,5 +516,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));

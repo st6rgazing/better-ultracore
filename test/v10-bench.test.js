@@ -142,6 +142,36 @@ test('parseSession: user text turns in order with the work that followed; harnes
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+const queuedLine = (min, prompt, kind = 'human') => ({ type: 'attachment', sessionId: SID, timestamp: T(min), cwd: '/r', gitBranch: 'main', attachment: { type: 'queued_command', prompt, origin: { kind } } });
+
+test('parseSession: a message typed while the agent was busy is a turn, once, with its own id space', () => {
+  const dir = tmp('queued');
+  try {
+    const file = path.join(dir, 's.jsonl');
+    fs.writeFileSync(file, [
+      user(1, 'add a late fee to the yearly plan', '/r'),
+      queuedLine(2, 'no late fee on the free plan'),
+      tool(3, 'Edit', { file_path: 'fee.txt' }),
+      queuedLine(4, '<task-notification>done</task-notification>', 'task'),
+      queuedLine(5, [{ type: 'image', source: {} }, { type: 'text', text: 'this one is cut off' }]),
+      queuedLine(6, 'make the header darker please'),
+      user(7, 'make the header darker please', '/r'),
+      user(8, 'thanks, now the footer as well', '/r'),
+    ].map((l) => JSON.stringify(l)).join('\n'));
+    const { turns } = mc.parseSession(file);
+    assert.deepStrictEqual(turns.map((t) => [t.idx, t.n, !!t.queued, t.text]), [
+      [0, '000', false, 'add a late fee to the yearly plan'],
+      [1, 'q000', true, 'no late fee on the free plan'],
+      [2, 'q001', true, 'this one is cut off'],
+      [3, '001', false, 'make the header darker please'],
+      [4, '002', false, 'thanks, now the footer as well'],
+    ]);
+    assert.strictEqual(turns[1].edits, 1);
+    assert.strictEqual(turns[2].image, true);
+    assert.strictEqual(turns[1].cwd, '/r');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('transcripts skips temp project dirs', () => {
   const fx = fixture();
   try {
