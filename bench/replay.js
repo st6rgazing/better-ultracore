@@ -202,4 +202,55 @@ function samplePrecision(run, opts, { n = 120, seed = 10, ...extra } = {}) {
   return { sampled: answers.length, yes: answers.filter(Boolean).length, of: all.length };
 }
 
-module.exports = { modelCluster, judge, confirmCoverage, samplePrecision, coverage, metrics, replay, wouldBump, stripByRepo, freshCandidates, usable };
+const pct = (x) => (x === null || x === undefined ? '-' : `${(100 * x).toFixed(0)}%`);
+
+// The metrics of the three runs as a short text table.
+function summary(result) {
+  const row = (name, m) => `| ${name} | ${m.coverage.corrections} | ${m.coverage.recurring} | ${m.coverage.covered} (${pct(m.coverage.coverage)}) | ${m.coverage.confirmed ?? '-'} (${pct(m.coverage.confirmed_coverage)}) | ${pct(m.first_half.coverage)} | ${pct(m.second_half.coverage)} | ${m.rules} | ${m.decay_regret.regretted_rules} of ${m.decay_regret.archived} |`;
+  const inj = result.learn.injection;
+  return [
+    `Replay: ${result.learn.sessions} sessions, ${result.learn.turns} user turns, ${result.learn.cluster_calls} clustering steps`,
+    '',
+    '| run | corrections | mention a known rule | covered | judge-confirmed | first half | second half | rules at end | archived rules a later correction matched |',
+    '|---|---|---|---|---|---|---|---|---|',
+    row('learning', result.learn), row('learning, no per-repo stats', result.no_byrepo), row('no learning', result.no_learn),
+    '',
+    `Injection: rules shown on ${inj.turns_with_rules} of ${result.learn.turns} turns (${inj.rule_instances} rule showings); judged relevant ${inj.relevant ?? '-'} of ${inj.judged ?? '-'} sampled (${pct(inj.precision)})`,
+    `Model spend: $${result.spent_usd.toFixed(3)}`,
+  ].join('\n');
+}
+
+// CLI: node bench/replay.js --cache <dir outside the repo> [--projects-root dir] [--every 5] [--cap 3] [--model haiku]
+//      [--sample 120] [--seed 10] [--out file]
+// Three replays: learning, learning without per-repo stats, and no learning. Prints the summary; writes the metrics
+// (numbers only) to --out, by default <cache>/replay-metrics.json. Model answers are cached under --cache.
+function main(argv) {
+  const f = { every: '5', cap: '3', model: 'haiku', sample: '120', seed: '10' };
+  for (let i = 0; i < argv.length; i++) f[argv[i].replace(/^--/, '')] = argv[++i];
+  if (!f.cache) throw new Error('usage: replay.js --cache <dir outside the repo> [--projects-root dir] [--every 5] [--cap 3] [--model haiku]');
+  const { outside, spent } = require('./ask');
+  const { allSessions } = require('./transcripts');
+  const cacheDir = outside(f.cache);
+  const sessions = f['projects-root'] ? allSessions(f['projects-root']) : allSessions();
+  const opts = { cacheDir, label: 'replay', cap: parseFloat(f.cap), model: f.model };
+  // Each replay starts from an empty store in a fresh folder; earlier ones are left in place under the cache dir.
+  const homes = fs.mkdtempSync(path.join(fs.mkdirSync(cacheDir, { recursive: true }) || cacheDir, 'replay-home-'));
+  const go = (name, o) => replay(sessions, { home: path.join(homes, name), every: parseInt(f.every, 10), log: (m) => console.error(`[${name}] ${m}`), ...o });
+  const learned = go('learn', { cluster: modelCluster(opts) });
+  const flat = go('no-byrepo', { cluster: modelCluster(opts), byRepo: false });
+  const none = go('no-learn', { learn: false });
+  const result = {
+    learn: metrics(learned, { confirmed: confirmCoverage(learned, opts), relevant: samplePrecision(learned, opts, { n: parseInt(f.sample, 10), seed: parseInt(f.seed, 10) }) }),
+    no_byrepo: metrics(flat, { confirmed: confirmCoverage(flat, opts) }),
+    no_learn: metrics(none),
+    spent_usd: spent(cacheDir, 'replay'),
+  };
+  const out = f.out || path.join(cacheDir, 'replay-metrics.json');
+  fs.writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
+  console.log(summary(result));
+  console.error(`wrote ${out}`);
+}
+
+if (require.main === module) main(process.argv.slice(2));
+
+module.exports = { summary, modelCluster, judge, confirmCoverage, samplePrecision, coverage, metrics, replay, wouldBump, stripByRepo, freshCandidates, usable };

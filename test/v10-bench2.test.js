@@ -453,4 +453,39 @@ test('replay model steps: clustering, the yes/no judge and its two uses', () => 
   assert.strictEqual(samplePrecision(run, {}, { n: 2, askFn: yesFor('emoji') }).sampled, 2);
 });
 
+// Stand-in for claude as a node script: clusters every correction that mentions emoji into one rule and says yes
+// to every judge item.
+const FAKE_MODEL = `#!/usr/bin/env node
+let raw = '';
+process.stdin.on('data', (d) => { raw += d; }).on('end', () => {
+  const data = JSON.parse(raw.slice(raw.indexOf('\\n\\n') + 2));
+  const result = Array.isArray(data)
+    ? data.map((x) => ({ i: x.i, yes: true }))
+    : [{ id: 'icons-not-emoji', rule: 'Never use emoji for icons.', when: { keywords: ['icons', 'emoji'] }, kind: 'ui', sources: data.corrections.filter((c) => /emoji/.test(c.text)).map((c) => c.h) }];
+  console.log(JSON.stringify({ result: JSON.stringify(result), total_cost_usd: 0.01 }));
+});
+`;
+
+test('replay CLI runs the three replays with a stand-in model and writes numbers only', () => {
+  const root = tmp('replay-cli');
+  try {
+    replayFixture(root);
+    const bin = path.join(root, 'fake-claude');
+    write(bin, FAKE_MODEL, 0o755);
+    const cache = path.join(root, 'cache');
+    const r = spawnSync('node', [path.join(ROOT, 'bench', 'replay.js'), '--cache', cache, '--projects-root', root, '--every', '2'], { encoding: 'utf8', env: { ...process.env, BUC_CLAUDE_BIN: bin } });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Replay: 3 sessions, 5 user turns, 1 clustering steps/);
+    assert.match(r.stdout, /\| learning \| 2 \| 1 \| 1 \(50%\) \| 1 \(50%\) \| 0% \| 100% \| 1 \|/);
+    assert.match(r.stdout, /\| no learning \| 2 \| 0 \| 0 \(0%\)/);
+    assert.match(r.stdout, /judged relevant 2 of 2 sampled \(100%\)/);
+    const saved = fs.readFileSync(path.join(cache, 'replay-metrics.json'), 'utf8');
+    assert.strictEqual(JSON.parse(saved).learn.coverage.covered, 1);
+    assert.doesNotMatch(saved, /emoji|sidebar/);
+    assert.ok(JSON.parse(saved).spent_usd > 0);
+    const bad = spawnSync('node', [path.join(ROOT, 'bench', 'replay.js'), '--cache', path.join(ROOT, 'bench', 'cache')], { encoding: 'utf8' });
+    assert.match(bad.stderr, /outside the repo/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
