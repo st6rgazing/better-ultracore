@@ -8,6 +8,7 @@ const { checkSession, turnFiles, changedFiles, addedLines } = require('../lib/ru
 const { shotSync, resolveServer, isUiFile, classesIn } = require('../lib/shot');
 const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
+const evidence = require('../lib/rules/evidence');
 
 const MAX_REASON = 600;
 const MAX_CONTEXT = 900;
@@ -51,7 +52,7 @@ function run(input) {
     store.clearTurn(sessionId);
     return null;
   }
-  const failed = checkSession(sessionId, input).filter((r) => !r.pass);
+  const failed = [...checkSession(sessionId, input), ...evidence.stopChecks(sessionId, input)].filter((r) => !r.pass);
   const hard = failed.filter((r) => !r.soft);
   const notes = failed.filter((r) => r.soft).map((r) => redact(r.detail));
   if (hard.length) {

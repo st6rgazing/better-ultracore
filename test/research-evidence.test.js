@@ -78,3 +78,21 @@ test('stopChecks reads the turn file, reports one gap once and honours BUC_OFF',
     assert.deepStrictEqual(evidence.stopChecks('e', say('Fixed. All tests pass.')), []);
   });
 });
+
+test('Stop hook: an unbacked claim blocks once, never when stop_hook_active, and a soft gap is feedback', () => {
+  const stop = require('../hooks/stop-check');
+  withHome(() => {
+    store.patchTurn('h', { kind: 'edit', prompt: 'fix the crash', toolCalls: 2, lastEditAt: 2 });
+    const out = stop.run({ session_id: 'h', last_assistant_message: 'Fixed. All tests pass.' });
+    assert.strictEqual(out.decision, 'block');
+    assert.match(out.reason, /unbacked-claim: Your reply says tests pass/);
+    assert.strictEqual(stop.run({ session_id: 'h', stop_hook_active: true, last_assistant_message: 'Fixed. All tests pass.' }), null);
+    assert.strictEqual(store.readTurn('h'), null, 'the second stop clears the turn');
+    store.patchTurn('h2', { kind: 'edit', prompt: 'fix the crash', toolCalls: 2, lastEditAt: 2 });
+    const soft = stop.run({ session_id: 'h2', last_assistant_message: 'Fixed.' });
+    assert.strictEqual(soft.decision, undefined);
+    assert.match(soft.hookSpecificOutput.additionalContext, /ran nothing after your last edit/);
+    store.patchTurn('h3', { kind: 'edit', prompt: 'rename the helper', toolCalls: 4, lastEditAt: 2, lastRunAt: 4, lastTestAt: 4, lastTestOk: true });
+    assert.strictEqual(stop.run({ session_id: 'h3', last_assistant_message: 'Renamed. All tests pass.' }), null);
+  });
+});
