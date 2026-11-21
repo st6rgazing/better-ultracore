@@ -63,3 +63,13 @@ test('record votes on the shown rules and evicts one corrected twice in a row; c
   assert.strictEqual(store.loadRules()[0].votes, 3);
   assert.deepStrictEqual(votes.cap([1, 2, 3, 4, 5]), [1, 2, 3, 4, 5]);
 }));
+
+test('the prompt feedback votes on the rules the previous turn was shown', () => withHome(() => {
+  const feedback = require('../lib/rules/feedback');
+  store.importRules([rule('shown')]);
+  store.saveLastTurn('v', { rules: ['shown'], repo: 'r' });
+  feedback.onPrompt({ prompt: 'now add a footer', sessionId: 'v', repo: 'r' });
+  assert.strictEqual(store.loadRules()[0].votes, 3);
+  feedback.onPrompt({ prompt: 'no, that is not what I asked', sessionId: 'v', repo: 'r' });
+  assert.strictEqual(store.loadRules()[0].votes, 2);
+}));
