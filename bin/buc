@@ -53,6 +53,8 @@ const commands = {
     console.log(JSON.stringify({ since: f.since || null, rerun, keep: steps.map((s) => s.id).filter((id) => !rerun.includes(id)) }));
   },
   // buc learn [--projects-root dir] [--dry-run]: collect corrective user turns for /buc learn clustering.
+  // Each candidate is {session_id, text, repo, h, ts}. Without --dry-run they are queued in the inbox, which is where
+  // `buc rules import` looks up a rule's `sources: [h]`.
   learn(argv) {
     const f = parseFlags(argv);
     const root = f['projects-root'] || path.join(os.homedir(), '.claude', 'projects');
@@ -61,8 +63,24 @@ const commands = {
     const store = require('../lib/rules/store');
     const known = new Set(store.readInbox().map((i) => i.text.toLowerCase()));
     const fresh = found.filter((c) => !known.has(c.text.toLowerCase()));
-    store.appendInbox(fresh.map((c) => ({ ts: new Date().toISOString(), ...c })));
+    store.appendInbox(fresh.map((c) => ({ ts: new Date(store.now()).toISOString(), ...c })));
     console.log(JSON.stringify({ candidates: found.length, appended: fresh.length }));
+  },
+  // buc handsoff [on|off|auto] [--cwd dir]: set or show hands-off mode for the repo that contains cwd.
+  handsoff([value, ...rest]) {
+    const f = parseFlags(value && value.startsWith('--') ? [value, ...rest] : rest);
+    const setting = value && !value.startsWith('--') ? value : null;
+    const { execFileSync } = require('node:child_process');
+    const handsoff = require('../lib/handsoff');
+    let root;
+    try {
+      root = execFileSync('git', ['-C', f.cwd || process.cwd(), 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      throw new Error('handsoff works per git repo; run it inside one');
+    }
+    const repo = require('../lib/context').repoKey(root);
+    if (setting && !handsoff.set(repo, setting)) throw new Error('could not write repos.json');
+    console.log(JSON.stringify({ repo, setting: require('../lib/rules/store').repoState(repo).handsOff || 'auto', ...handsoff.mode(repo, { root }) }));
   },
   // buc check --session <id>: run the deterministic checks of the last turn's matched rules; exit 1 on failure.
   check(argv) {
@@ -117,7 +135,7 @@ async function main(argv) {
   const [sub, ...rest] = argv;
   if (commands[sub]) return commands[sub](rest);
   if (EXTERNAL[sub] && fs.existsSync(EXTERNAL[sub])) return require(EXTERNAL[sub]).run(rest);
-  console.error('usage: buc classify|context|affected|learn|check|rules|run-headless|preflight [options]');
+  console.error('usage: buc classify|context|affected|learn|check|rules|handsoff|run-headless|preflight [options]');
   process.exitCode = 2;
 }
 
