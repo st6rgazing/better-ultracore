@@ -81,6 +81,18 @@ Verdict against the pre-registered criteria: **no measurable gain on unseen task
 - With 4 correction cases, a real effect of under about 2 passes cannot be detected either way.
 - Stock Ultracode on these cases did not finish before the run deadline.
 
+#### Why it did not transfer
+
+- **The as-of filter removed the personalisation.** It dropped every rule learned in the same session as the case. Most of the user's rules came from one large session that also holds 6 of the 7 held-out cases, so each held-out run kept 0-3 rules, none relevant. The test therefore measured buc's generic layer, not its personalisation.
+- **The generic layer changed nothing.** buc and plain touched the same files and passed and failed the same runs on every held-out case. The generic lines (self-classification, runtime-effect probe) did not change behaviour and added about 30% tokens.
+- **The failures were neighbouring-state bugs.** The two failing correction cases were stale state on a new game, and a menu with no sound and a size jump. The user already had rules for those, but the filter dropped them, and one would not have matched anyway because matching is keyword-only.
+
+Fixes in progress:
+- a `case-time` cut (time only, keeping earlier lessons from the same session);
+- synonym and stem rule matching;
+- a shorter default intent line;
+- a soft neighbour-states Stop check.
+
 ### Known flaws and next steps (design review, 2026-11-21)
 
 1. No controlled comparison. The dev gains were measured on the cases the loop tuned on, against an older plain run. Next: the same-run paired plain arm on more held-out cases (needs more corpus).
