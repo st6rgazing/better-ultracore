@@ -28,6 +28,44 @@ Each case is a real past request. It is checked out read-only at the commit befo
 | **buc v8** | **13/24** | 17/24 | **19** | **1.36M** | **$0.52** |
 | ultra (N=1) | 1/8 | 3/8 | 12 | 7.51M | $2.68 |
 
+### v9: fairer harness, all three arms rerun (N=3)
+
+The harness changed in v9, so v7/v8 rows above are not directly comparable:
+- Clones get copy-on-write `node_modules`, so agents can actually run the typecheck.
+- The sound case's acceptance accepts the repo's own `sfx()` call; it still passes on the user's real fix and fails on the base commit.
+- A first-turn question no longer swallows the real follow-up.
+
+| Arm | First try | Final | Interventions | Tokens to accept / run | Cost / run |
+|---|---|---|---|---|---|
+| plain | 11/24 | 23/24 | 21 | 1.71M | $0.62 |
+| plain+CLAUDE.md | 11/24 | 17/24 | 20 | 1.77M | $0.63 |
+| **buc v9** | **13/24** | **23/24** | **14** | **1.67M** | **$0.55** |
+
+v9 changes, designed from a review of every failing run:
+- **End-to-end intent line:** for feature requests without a narrowing cue: trace from the app entry to the screen the user means; if ambiguous, state the reading and do not ask. "Only", "just", degree words, file paths and exact "change X to Y" edits keep the literal line.
+- **Correction lines on follow-up turns:**
+  - "still wrong": re-read the original words, keep what was right.
+  - "no, I meant": take a different reading, do not defend or ask.
+  - "undo and show me": restore your files, answer in text.
+  - "way too X": move halfway back.
+- **Typecheck check:** the repo's own `typecheck` script runs at Stop after any edit turn and blocks once on failure. Turn it off with `"autoCheck": false` in `.claude/buc.json`.
+- **Runtime-effect probe:** for sound, toast, animation and similar changes, check the guards (audio unlock, mute, permission) that would stop the effect firing.
+- **Rule storage and keys:**
+  - Keyword cleaning: meta words like "everything" no longer pull in unrelated rules.
+  - `repoKey`: clones and worktrees share per-repo stats.
+- **Commit-as-you-go habit:** when the user states it, it becomes a pinned rule enforced by a `commit-changes` stop check. Remove it with `buc rules drop commit-as-you-go`.
+
+buc's main gain in v9 is fewer corrections: 14 interventions against 21 (plain) and 20 (CLAUDE.md). On first try it leads by 2. With the fairer harness, plain's final pass rose from 14 to 23, so buc's v7 lead on final pass is gone.
+
+Wins:
+- bug form: 2/3 first try vs 0/3.
+- lobby preview: 2/3 vs 1/3.
+- first-screen sound: 1/3, the first first-try pass for any arm.
+
+Regression: the guide-icons case fell to 1/3 (plain 3/3), because the new end-to-end line made an exact "change X to be ?" edit read broadly. Exact-edit prompts now keep the literal line. Rerun at N=5: 3/5 first try, still behind plain and at higher token cost.
+
+### v8
+
 v8 adds two intent lines (`lib/intent.js`), both found by reading v7 failures:
 - **Sweep prompts** ("whole app", "all traces", "everywhere") get "grep the whole repo for every occurrence, fix each, grep again" instead of "touch only what is named". v7 was telling the agent to narrow a request that asked for breadth.
 - **Vague screen fixes** ("can u fix the X screen") get "the request names no defect: work out what the user dislikes from the pasted text and the standing corrections". On the bug-form case first-try went from 0/3 to 3/3. With the same rules but without the line, plain+CLAUDE.md scored 0/3.
@@ -39,7 +77,10 @@ Ultracode on these tasks spawned no subagents. It cost about 4× plain per run a
 Caveats:
 - N=3. A 1–2 case difference is noise. buc v7 vs v8 per-case swings of ±1 (house-rules, wrong-guess) are within run-to-run variance.
 - The learned rules come from the same history as these cases, so rule matching is an optimistic test of personalisation. The intent lines are generic and do not use case text.
-- Still weak: the "show me how" case, where the user changed their mind after the agent edited (first try: plain+CLAUDE.md 2/6, buc 0/6, plain 0/3), and the first-screen sound case, where every arm picks the wrong screen (0 first-try passes in any arm).
+- Still weak in v9:
+  - The "show me how" case, where the user changed their mind after the agent edited: buc 0/3 first try, plain+CLAUDE.md 2/3.
+  - Guide icons: buc 3/5 vs plain 3/3.
+- The bench now records every round (prompt, reply, accept result, patch). `--exclude-rules-from self` scores a case without rules mined from its own session; private cases still need their own exclude lists.
 
 ## Synthetic fixtures (10 cases, N=2)
 
