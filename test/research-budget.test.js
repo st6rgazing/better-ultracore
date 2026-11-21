@@ -45,3 +45,14 @@ test('promptKey is the same for the same brief and differs by brief, agent type 
   assert.notStrictEqual(budget.promptKey({ tool_name: 'Workflow', tool_input: { script: 'find every caller of parse()' } }), a);
   assert.strictEqual(budget.promptKey(agent({})), '');
 });
+
+test('needsModel flags a default-model launch and leaves typed agents, forks and named workflows alone', () => {
+  assert.strictEqual(budget.needsModel(agent({ prompt: 'x' })), true);
+  assert.strictEqual(budget.needsModel(agent({ prompt: 'x', subagent_type: 'general-purpose' })), true);
+  assert.strictEqual(budget.needsModel(agent({ prompt: 'x', model: 'haiku' })), false);
+  assert.strictEqual(budget.needsModel(agent({ prompt: 'x', subagent_type: 'Explore' })), false);
+  assert.strictEqual(budget.needsModel(agent({ prompt: 'x', subagent_type: 'fork' })), false);
+  assert.strictEqual(budget.needsModel({ tool_name: 'Workflow', tool_input: { script: 'await agent({prompt})' } }), true);
+  assert.strictEqual(budget.needsModel({ tool_name: 'Workflow', tool_input: { script: 'await agent({prompt, model: "haiku"})' } }), false);
+  assert.strictEqual(budget.needsModel({ tool_name: 'Workflow', tool_input: { name: 'buc-flow' } }), false);
+});
