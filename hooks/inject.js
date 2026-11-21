@@ -15,6 +15,7 @@ const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 const orchestrate = require('../lib/orchestrate');
 const votes = require('../lib/rules/votes');
+const reflect = require('../lib/reflect');
 
 const MAX_CONTEXT = 800;
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
@@ -96,6 +97,8 @@ function run(input) {
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
   if (tc && !handsOff) fixed.push(TYPECHECK_LINE);
   const correction = readCorrection(prompt, hadPrev);
+  // A correction leaves a hash-only reflection; one that recurs twice becomes a repo rule (lib/reflect.js).
+  reflect.capture({ pattern: correction.pattern, prompt, sessionId, repo, root: root ? root.trim() : cwd });
   const reading = handsOff ? { name: 'HANDSOFF', line: HANDSOFF_LINE } : correction.line ? correction : readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) });
   const intent = reading.line;
   // A first-turn UI edit with a dev server to shoot: tell the agent how to look at the result.

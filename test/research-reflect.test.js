@@ -74,3 +74,14 @@ test('capture keeps a hash and never the text, and promotes on the third sightin
   assert.deepStrictEqual(say('c'), { stored: false, promoted: [] });
   assert.ok(home);
 }));
+
+test('the prompt hook captures a reflection for a correction in a repo and none for a first prompt', () => withHome(() => {
+  const { execFileSync } = require('node:child_process');
+  const inject = require('../hooks/inject');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buc-reflect-repo-')));
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+  inject.run({ prompt: 'make the logo a bit bigger', cwd: dir, session_id: 'p', transcript_path: '' });
+  assert.deepStrictEqual(reflect.read(), []);
+  inject.run({ prompt: 'way too big', cwd: dir, session_id: 'p', transcript_path: '' });
+  assert.deepStrictEqual(reflect.read().map((c) => [c.k, c.s]), [['overshoot', 'p']]);
+}));
