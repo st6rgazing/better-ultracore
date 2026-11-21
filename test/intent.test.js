@@ -84,3 +84,14 @@ test('correctionLine fires only after a previous turn', () => {
   assert.match(correctionLine('no wait undo ur changes just show me how', true), /text only/);
   assert.strictEqual(correctionLine('add a logout button', true), '');
 });
+
+test('short degree feedback after a change gets the overshoot line', () => {
+  const { correctionLine } = require('../lib/intent');
+  for (const p of ['not that plain', 'no, not so dark', 'way too big', 'thats too much', 'now its a bit too loud', 'tone it down', 'Too bright!']) {
+    assert.match(correctionLine(p, true), /^You overshot\./, p);
+    assert.strictEqual(correctionLine(p, false), '', p);
+  }
+  assert.ok(correctionLine('too big', true).length <= 180);
+  const other = ['not that one, the other button', 'not that file', 'too many requests', 'the header is too big on the settings page so move it down and also fix the footer', 'make the tooltip bigger', 'not working'];
+  for (const p of other) assert.doesNotMatch(correctionLine(p, true), /overshot/, p);
+});
