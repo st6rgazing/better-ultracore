@@ -147,4 +147,90 @@ test('capturePlaywright clicks, saves a PNG and audits the lying-UI fixture', { 
   assert.strictEqual(await shot.ping(url), false);
 });
 
+// A copy of the fixture app in a temp dir, with the given .claude/buc.json. Returns the dir.
+function app(conf = { ui: { dev: 'node server.js' } }) {
+  const dir = tmp('buc-app-');
+  for (const f of ['server.js', 'index.html']) fs.copyFileSync(path.join(FIXTURE, f), path.join(dir, f));
+  if (conf) write(dir, '.claude/buc.json', JSON.stringify(conf));
+  return dir;
+}
+
+test('shot: skipped with no engine, no server, ui off, or a server that never answers; never throws', async () => {
+  const dir = app();
+  await withEnv({ BUC_SHOT_ENGINE: 'none' }, async () => {
+    assert.deepStrictEqual(await shot.shot({ root: dir }), { status: 'skipped', reason: 'no browser engine: install Playwright in the repo or Google Chrome' });
+  });
+  await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(dir) }, async () => {
+    assert.match((await shot.shot({ root: app(null) })).reason, /no dev server found/);
+    assert.match((await shot.shot({ root: app({ ui: false }) })).reason, /screenshots are off/);
+    const dead = app({ ui: { dev: 'node -e "setTimeout(() => {}, 60000)"' } });
+    const r = await shot.shot({ root: dead, timeoutMs: 1500 });
+    assert.strictEqual(r.status, 'skipped');
+    assert.match(r.reason, /the server did not answer at http:\/\/localhost:\d+ within \d+ s/);
+    assert.match((await shot.shot({ root: path.join(dir, 'nowhere') })).status, /skipped/);
+  });
+});
+
+test('shot with a stand-in browser: writes the PNG, reports ignored clicks, and leaves no server running', async () => {
+  const dir = app();
+  await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(dir) }, async () => {
+    const out = path.join(dir, 'out', 'shot.png');
+    const r = await shot.shot({ root: dir, path: '/settings', out, clicks: ['text=Details'], audit: true });
+    assert.strictEqual(r.status, 'ok');
+    assert.strictEqual(r.png, out);
+    assert.strictEqual(r.engine, 'chrome');
+    assert.match(r.url, /^http:\/\/localhost:\d+\/settings$/);
+    assert.deepStrictEqual(r.findings, []);
+    assert.deepStrictEqual(r.notes, ['clicks were ignored: they need Playwright in the repo', 'no layout audit: it needs Playwright in the repo']);
+    assert.ok(fs.existsSync(out));
+    assert.strictEqual(await shot.ping(r.url), false, 'the server it started is gone');
+    const auto = await shot.shot({ root: dir });
+    assert.ok(auto.png.startsWith(path.join(os.tmpdir(), 'buc-shots')));
+    fs.rmSync(auto.png);
+  });
+});
+
+test('shot uses a server that is already running and does not stop it', async () => {
+  const port = await shot.freePort();
+  const url = `http://localhost:${port}`;
+  const dir = app({ ui: { dev: 'node server.js', url } });
+  const mine = shot.startServer('node server.js', dir, { PORT: String(port) });
+  try {
+    assert.ok(await shot.waitFor(url, 10000));
+    await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(dir) }, async () => {
+      assert.strictEqual((await shot.shot({ root: dir, out: path.join(dir, 's.png') })).status, 'ok');
+    });
+    assert.strictEqual(await shot.ping(url), true, 'still up: it was not ours to stop');
+  } finally {
+    await shot.stopServer(mine);
+  }
+});
+
+test('shot with real Chrome gives a PNG over 5 kB and leaves no server', { skip: !REAL_CHROME && 'Chrome is not installed' }, async () => {
+  const dir = app();
+  await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: '' }, async () => {
+    const r = await shot.shot({ root: dir, out: path.join(dir, 'real.png'), timeoutMs: 45000 });
+    assert.strictEqual(r.status, 'ok', r.reason);
+    assert.ok(fs.statSync(r.png).size > 5000);
+    assert.strictEqual(fs.readFileSync(r.png).subarray(1, 4).toString(), 'PNG');
+    assert.strictEqual(await shot.ping(r.url), false);
+  });
+});
+
+test('shot with Playwright audits the lying UI and limits findings to the given classes', { skip: !playwrightDir() && 'Playwright is not installed' }, async () => {
+  const dir = app();
+  await withEnv({ BUC_SHOT_ENGINE: 'playwright', BUC_PLAYWRIGHT: playwrightDir() }, async () => {
+    const r = await shot.shot({ root: dir, out: path.join(dir, 'pw.png'), audit: true, classes: ['save'] });
+    assert.strictEqual(r.status, 'ok', r.reason);
+    assert.strictEqual(r.engine, 'playwright');
+    assert.ok(fs.statSync(r.png).size > 5000);
+    assert.deepStrictEqual(r.findings.map((f) => f.split(':')[0]), ['horizontal overflow', 'overlap']);
+    assert.strictEqual(await shot.ping(r.url), false);
+    const bad = await shot.shot({ root: dir, out: path.join(dir, 'bad.png'), clicks: ['text=No such control'], timeoutMs: 8000 });
+    assert.strictEqual(bad.status, 'skipped');
+    assert.match(bad.reason, /^capture failed: /);
+    assert.strictEqual(await shot.ping(r.url), false);
+  });
+});
+
 // end
