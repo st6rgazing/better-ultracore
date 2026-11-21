@@ -365,4 +365,49 @@ test('sessionTurns keeps typed turns with the files edited after them', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+// Three sessions: a correction, an unrelated session, and the same correction again on a similar request.
+function replayFixture(root) {
+  transcript(root, '-Users-x-app', 'r1', '2026-05-01', [['u', 0, 'add icons to the toolbar'], ['a', 1, '/app/toolbar.tsx'], ['u', 5, 'no emoji, use the icon set']]);
+  transcript(root, '-Users-x-app', 'r2', '2026-05-02', [['u', 0, 'rename the helper to formatDate'], ['a', 1, '/app/date.ts']]);
+  transcript(root, '-Users-x-app', 'r3', '2026-05-03', [['u', 0, 'add icons to the sidebar'], ['a', 1, '/app/sidebar.tsx'], ['u', 5, 'no emoji please, i said icons']]);
+  return require('../bench/transcripts').allSessions(root);
+}
+
+// What a clustering model would return for the fixture: one rule from every candidate that mentions emoji.
+const fakeCluster = (candidates) => [{
+  id: 'icons-not-emoji', rule: 'Never use emoji for icons; use the icon set.', when: { keywords: ['icons', 'emoji'] }, kind: 'ui',
+  sources: candidates.filter((c) => /emoji/.test(c.text)).map((c) => c.h),
+}, { id: 'made-up', rule: 'Not backed by any correction.', when: { keywords: ['helper'] }, sources: ['000000000000'] }];
+
+test('replay: a recurring correction is covered with learning and not without', () => {
+  const { replay, wouldBump } = require('../bench/replay');
+  const root = tmp('replay');
+  const before = { home: process.env.BUC_HOME, now: process.env.BUC_NOW };
+  try {
+    const sessions = replayFixture(root);
+    const on = replay(sessions, { home: path.join(root, 'home-on'), every: 2, cluster: fakeCluster });
+    assert.deepStrictEqual([on.sessions, on.turns, on.corrections.length], [3, 5, 2]);
+    assert.deepStrictEqual(on.corrections.map((c) => c.covered.map((r) => r.id)), [[], ['icons-not-emoji']]);
+    assert.deepStrictEqual(on.corrections[1].would_bump, ['icons-not-emoji']);
+    assert.strictEqual(on.corrections[1].request, 'add icons to the sidebar');
+    assert.deepStrictEqual(on.injections.map((x) => [x.session, x.idx, x.rules[0].id]), [['r3', 0, 'icons-not-emoji'], ['r3', 1, 'icons-not-emoji']]);
+    // only rules backed by a real correction are stored; the recurrence bumps the count
+    assert.deepStrictEqual(on.rules.map((r) => r.id), ['icons-not-emoji']);
+    assert.ok(on.rules[0].count >= 2);
+    assert.strictEqual(on.cluster_calls, 1);
+    // reviewed after every session, the one-correction rule decays before it is needed: that is decay regret
+    const eager = replay(sessions, { home: path.join(root, 'home-eager'), every: 1, cluster: fakeCluster });
+    assert.deepStrictEqual(eager.corrections[1].covered, []);
+    assert.deepStrictEqual(eager.corrections[1].regret, ['icons-not-emoji']);
+    assert.ok(eager.archived.includes('icons-not-emoji'));
+    const off = replay(sessions, { home: path.join(root, 'home-off'), learn: false, cluster: fakeCluster });
+    assert.strictEqual(off.corrections.length, 2);
+    assert.ok(off.corrections.every((c) => !c.covered.length && !c.would_bump.length));
+    assert.deepStrictEqual([off.injections.length, off.rules.length, off.cluster_calls], [0, 0, 0]);
+    // the caller's store and clock are put back
+    assert.deepStrictEqual({ home: process.env.BUC_HOME, now: process.env.BUC_NOW }, before);
+    assert.deepStrictEqual(wouldBump([{ id: 'a', when: { keywords: ['emoji'] } }, { id: 'b', when: { keywords: ['commit'] } }], 'No Emoji here'), ['a']);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
