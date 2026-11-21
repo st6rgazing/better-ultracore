@@ -57,3 +57,20 @@ test('promote stores a repo-scoped rule with hash-only sources and uses up its c
   assert.deepStrictEqual(reflect.promote('r2'), ['reflect-overshoot']);
   assert.deepStrictEqual(store.loadRules()[0].scope, { repos: ['r1', 'r2'] });
 }));
+
+test('capture keeps a hash and never the text, and promotes on the third sighting', () => withHome((home) => {
+  const say = (sessionId, prompt = 'no, way too big, I said slightly') => reflect.capture({ pattern: 'overshoot', prompt, sessionId, repo: 'r1' });
+  assert.deepStrictEqual(say('a'), { stored: true, promoted: [] });
+  assert.deepStrictEqual(Object.keys(reflect.read()[0]).sort(), ['h', 'k', 'repo', 's', 'ts']);
+  assert.strictEqual(reflect.read()[0].h, store.hash('no, way too big, I said slightly'));
+  assert.ok(!fs.readFileSync(reflect.file(), 'utf8').includes('too big'));
+  assert.deepStrictEqual(say('a'), { stored: true, promoted: [] });
+  assert.deepStrictEqual(say('b'), { stored: true, promoted: ['reflect-overshoot'] });
+  assert.ok(!JSON.stringify(store.loadRules()).includes('too big'));
+  for (const bad of [{ pattern: '' }, { pattern: 'self' }, { pattern: 'still', repo: '' }, { pattern: 'still', sessionId: '' }, undefined]) {
+    assert.deepStrictEqual(reflect.capture(bad && { prompt: 'x', sessionId: 's', repo: 'r1', ...bad }), { stored: false, promoted: [] });
+  }
+  process.env.BUC_OFF = 'reflect';
+  assert.deepStrictEqual(say('c'), { stored: false, promoted: [] });
+  assert.ok(home);
+}));
