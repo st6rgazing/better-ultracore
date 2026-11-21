@@ -60,3 +60,27 @@ test('repoState is empty for an unknown repo and reads repos.json', () => {
   fs.writeFileSync(path.join(home, 'repos.json'), 'not json');
   assert.deepStrictEqual(store.repoState('r1'), { events: [] });
 });
+
+test('recordRepo appends named events per repo, caps them and never stores text', () => {
+  const home = fresh();
+  const st = store.recordRepo('r1', 'handsoff', 's1', '2026-03-01T00:00:00.000Z');
+  assert.deepStrictEqual(st.events, [{ e: 'handsoff', s: 's1', ts: '2026-03-01T00:00:00.000Z' }]);
+  store.recordRepo('r1', 'edit', 's2', Date.parse('2026-03-02T00:00:00.000Z'));
+  store.recordRepo('r2', 'edit', 's3');
+  assert.deepStrictEqual(store.repoState('r1').events.map((e) => [e.e, e.s, e.ts]), [['handsoff', 's1', '2026-03-01T00:00:00.000Z'], ['edit', 's2', '2026-03-02T00:00:00.000Z']]);
+  assert.strictEqual(store.repoState('r2').events.length, 1);
+  assert.strictEqual(store.recordRepo('', 'edit', 's1'), null);
+  assert.strictEqual(store.recordRepo('r1', '', 's1'), null);
+  for (let i = 0; i < 410; i++) store.recordRepo('r3', 'edit', 's', 1700000000000 + i);
+  assert.strictEqual(store.repoState('r3').events.length, 400);
+  assert.deepStrictEqual(Object.keys(store.repoState('r3').events[0]).sort(), ['e', 's', 'ts']);
+  fs.writeFileSync(path.join(home, 'repos.json'), '{broken');
+  assert.strictEqual(store.recordRepo('r1', 'edit', 's1'), null);
+  assert.strictEqual(fs.readFileSync(path.join(home, 'repos.json'), 'utf8'), '{broken');
+});
+
+test('recordRepo defaults its time to BUC_NOW', () => {
+  fresh();
+  withEnv({ BUC_NOW: '2026-05-05T00:00:00.000Z' }, () => store.recordRepo('r1', 'edit', 's1'));
+  assert.strictEqual(store.repoState('r1').events[0].ts, '2026-05-05T00:00:00.000Z');
+});
