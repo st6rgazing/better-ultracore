@@ -30,3 +30,24 @@ test('BUC_NOW sets the default time of new rules', () => {
     assert.strictEqual(store.loadRules()[0].last_seen, '2026-01-02T03:04:05.000Z');
   });
 });
+
+test('off() reads BUC_OFF and the repo buc.json off list', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-off-'));
+  withEnv({ BUC_OFF: undefined }, () => assert.strictEqual(store.off('self', root), false));
+  withEnv({ BUC_OFF: 'self, wide-diff' }, () => {
+    assert.strictEqual(store.off('self', root), true);
+    assert.strictEqual(store.off('Wide-Diff', root), true);
+    assert.strictEqual(store.off('typecheck', root), false);
+  });
+  fs.mkdirSync(path.join(root, '.claude'));
+  fs.writeFileSync(path.join(root, '.claude', 'buc.json'), JSON.stringify({ off: ['typecheck'] }));
+  withEnv({ BUC_OFF: 'self' }, () => {
+    assert.strictEqual(store.off('typecheck', root), true);
+    assert.strictEqual(store.off('self', root), true);
+    assert.strictEqual(store.off('ui', root), false);
+  });
+  fs.writeFileSync(path.join(root, '.claude', 'buc.json'), JSON.stringify({ off: 'ui,shot' }));
+  withEnv({ BUC_OFF: undefined }, () => assert.strictEqual(store.off('shot', root), true));
+  fs.writeFileSync(path.join(root, '.claude', 'buc.json'), '{broken');
+  withEnv({ BUC_OFF: undefined }, () => assert.strictEqual(store.off('shot', root), false));
+});
