@@ -161,4 +161,53 @@ function table(results) {
   return out.join('\n');
 }
 
-module.exports = { candidates, fired, sample, split, label, gate, table, GATE, REQUEST_LABELS, FOLLOWUP_LABELS };
+// True when a file may hold private text: it is outside any git work tree, or git ignores it there.
+function privatePath(file) {
+  const { spawnSync } = require('node:child_process');
+  const full = path.resolve(file);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  if (spawnSync('git', ['-C', path.dirname(full), 'rev-parse', '--show-toplevel']).status !== 0) return true;
+  return spawnSync('git', ['-C', path.dirname(full), 'check-ignore', '-q', full]).status === 0;
+}
+
+const readRows = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+const tally = (rows, key) => Object.entries(rows.reduce((n, r) => ({ ...n, [key(r)]: (n[key(r)] || 0) + 1 }), {})).map(([k, v]) => `${k} ${v}`).join(', ');
+
+// build: node bench/intent-eval.js build --out <private .jsonl> --cache <dir outside the repo> [--projects-root dir]
+//          [--requests 200] [--followups 60] [--per-pattern 24] [--seed 10] [--cap 5] [--model sonnet] [--label off]
+//        Samples real turns, pre-labels them with one offline model pass and writes one JSON row per line.
+// score: node bench/intent-eval.js score --file <.jsonl> [--split dev|test|all] [--mode self|regex]
+//        Prints per-pattern precision and the gate. The dev half is the default; keep the test half for the end.
+function main(argv) {
+  const [cmd, ...rest] = argv;
+  const f = { requests: '200', followups: '60', 'per-pattern': '24', seed: '10', cap: '5', model: 'sonnet', split: 'dev', mode: 'self' };
+  for (let i = 0; i < rest.length; i++) f[rest[i].replace(/^--/, '')] = rest[++i];
+  if (cmd === 'build') {
+    if (!f.out || !f.cache) throw new Error('usage: intent-eval.js build --out <private .jsonl> --cache <dir outside the repo>');
+    if (!privatePath(f.out)) throw new Error(`refusing to write private prompts to a tracked path: ${f.out}`);
+    const { outside, spent } = require('./ask');
+    const { allSessions } = require('./transcripts');
+    const cacheDir = outside(f.cache);
+    const seed = parseInt(f.seed, 10);
+    const sessions = f['projects-root'] ? allSessions(f['projects-root']) : allSessions();
+    const picked = split(sample(candidates(sessions), { requests: parseInt(f.requests, 10), followups: parseInt(f.followups, 10), perPattern: parseInt(f['per-pattern'], 10), seed }), seed);
+    const rows = f.label === 'off' ? picked.map((r) => ({ ...r, gold: null })) : label(picked, { cacheDir, label: 'intent-eval', cap: parseFloat(f.cap), model: f.model });
+    fs.writeFileSync(f.out, `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`);
+    console.log(`wrote ${rows.length} rows to ${f.out}: ${tally(rows, (r) => (r.followup ? 'followups' : 'requests'))}; ${tally(rows, (r) => r.split)}; labelled ${rows.filter((r) => r.gold).length}; model spend $${spent(cacheDir, 'intent-eval').toFixed(3)}`);
+    return;
+  }
+  if (cmd === 'score') {
+    if (!f.file) throw new Error('usage: intent-eval.js score --file <.jsonl> [--split dev|test|all] [--mode self|regex]');
+    const rows = readRows(f.file).filter((r) => f.split === 'all' || !r.split || r.split === f.split);
+    const labelled = rows.filter((r) => r.gold);
+    console.log(`${f.split} rows: ${rows.length}, labelled ${labelled.length}; labels: ${tally(labelled, (r) => r.gold)}`);
+    console.log('');
+    console.log(table(gate(rows, { mode: f.mode })));
+    return;
+  }
+  throw new Error('usage: intent-eval.js build|score ...');
+}
+
+if (require.main === module) main(process.argv.slice(2));
+
+module.exports = { candidates, fired, sample, split, label, gate, table, privatePath, GATE, REQUEST_LABELS, FOLLOWUP_LABELS };

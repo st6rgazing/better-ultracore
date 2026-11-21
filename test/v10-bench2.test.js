@@ -622,4 +622,46 @@ test('intent eval gate: precision per pattern against the 0.9 on 8 fires rule', 
   assert.ok(gate(rows, { mode: 'regex' }).every((r) => r.pass === null));
 });
 
+// Stand-in for claude as a node script: labels every request exact and every follow-up still.
+const FAKE_LABELLER = `#!/usr/bin/env node
+let raw = '';
+process.stdin.on('data', (d) => { raw += d; }).on('end', () => {
+  const items = JSON.parse(raw.slice(raw.lastIndexOf('\\n\\n') + 2));
+  console.log(JSON.stringify({ result: JSON.stringify(items.map((x) => ({ i: x.i, gold: x.kind === 'followup' ? 'still' : 'exact' }))), total_cost_usd: 0.02 }));
+});
+`;
+
+test('intent eval CLI: build writes labelled rows to a private path, score prints the gate', () => {
+  const root = tmp('eval-cli');
+  const work = tmp('eval-work');
+  try {
+    evalFixture(root);
+    const bin = path.join(work, 'fake-claude');
+    write(bin, FAKE_LABELLER, 0o755);
+    const cli = (...args) => spawnSync('node', [path.join(ROOT, 'bench', 'intent-eval.js'), ...args], { encoding: 'utf8', env: { ...process.env, BUC_CLAUDE_BIN: bin } });
+    const out = path.join(work, 'eval.jsonl');
+    const built = cli('build', '--out', out, '--cache', path.join(work, 'cache'), '--projects-root', root);
+    assert.strictEqual(built.status, 0, built.stderr);
+    assert.match(built.stdout, /wrote 6 rows .*requests 4, followups 2; .*labelled 6; model spend \$0\.020/);
+    const rows = fs.readFileSync(out, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepStrictEqual(rows.map((r) => r.gold).sort(), ['exact', 'exact', 'exact', 'exact', 'still', 'still']);
+    assert.ok(rows.every((r) => ['dev', 'test'].includes(r.split) && r.labelled_by === 'sonnet'));
+    const scored = cli('score', '--file', out, '--split', 'all');
+    assert.strictEqual(scored.status, 0, scored.stderr);
+    assert.match(scored.stdout, /all rows: 6, labelled 6; labels: exact 4, still 2/);
+    assert.match(scored.stdout, /\| degree \| 1 \| 1 \| 1\.00 \| FAIL \(1 fires\) \|/);
+    assert.match(scored.stdout, /\| sweep \| 1 \| 0 \| 0\.00 \| FAIL \(1 fires\) \|/);
+    assert.match(scored.stdout, /sweep: e1:3/);
+    // the public paraphrase set scores through the same command
+    const pub = cli('score', '--file', path.join(ROOT, 'test', 'fixtures', 'intent-eval.public.jsonl'));
+    assert.strictEqual(pub.status, 0, pub.stderr);
+    assert.match(pub.stdout, /\| degree \| \d+ \| \d+ \| \d\.\d\d \| /);
+    // a tracked path inside the repo is refused
+    const bad = cli('build', '--out', path.join(ROOT, 'bench', 'intent-eval.jsonl'), '--cache', path.join(work, 'cache'), '--projects-root', root);
+    assert.notStrictEqual(bad.status, 0);
+    assert.match(bad.stderr, /refusing to write private prompts to a tracked path/);
+    assert.ok(!fs.existsSync(path.join(ROOT, 'bench', 'intent-eval.jsonl')));
+  } finally { for (const d of [root, work]) fs.rmSync(d, { recursive: true, force: true }); }
+});
+
 // more tests below
