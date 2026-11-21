@@ -52,6 +52,38 @@ test('domChrome returns what the binary prints for --dump-dom, and nothing for a
   assert.strictEqual(await shot.domChrome(path.join(tmp('buc-bin-'), 'missing'), { url: 'http://127.0.0.1:9/' }), '');
 });
 
+// A copy of the fixture app in a temp dir with a dev server in .claude/buc.json.
+function app() {
+  const dir = tmp('buc-app-');
+  for (const f of ['server.js', 'index.html']) fs.copyFileSync(path.join(FIXTURE, f), path.join(dir, f));
+  fs.mkdirSync(path.join(dir, '.claude'));
+  fs.writeFileSync(path.join(dir, '.claude', 'buc.json'), JSON.stringify({ ui: { dev: 'node server.js' } }));
+  return dir;
+}
+
+// Runs fn with the given env set, restoring the old values after.
+async function withEnv(env, fn) {
+  const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try { return await fn(); } finally {
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test('shot with Chrome reads seen from a DOM dump: the classes found, none, or null when the dump is empty', async () => {
+  const dir = app();
+  const seen = (html, classes) => withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: fakeChrome(html) }, async () => {
+    const r = await shot.shot({ root: dir, out: path.join(dir, 's.png'), classes });
+    assert.strictEqual(r.status, 'ok', r.reason);
+    return r.seen;
+  });
+  assert.deepStrictEqual(await seen('<div class="card wide">hi</div>', ['wide', 'gone']), ['wide']);
+  assert.deepStrictEqual(await seen('<div class="card">hi</div>', ['wide']), []);
+  assert.strictEqual(await seen('', ['wide']), null);
+  assert.strictEqual(await seen('<div class="wide">hi</div>', undefined), null);
+  assert.strictEqual(await seen('<div class="wide">hi</div>', []), null);
+});
+
 test('capturePlaywright reports which of the given classes the capture shows, waiting for a late one', { skip: NO_PW }, async () => {
   await withServer(async (url) => {
     const mod = require(playwrightDir());
