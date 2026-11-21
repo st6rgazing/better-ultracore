@@ -9,7 +9,8 @@ const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
 const habits = require('../lib/rules/habits');
-const { readIntent, intentMode, correctionLine, SELF, SELF_SHORT } = require('../lib/intent');
+const { readIntent, intentMode, correctionLine, SELF, SELF_SHORT, HANDSOFF_LINE } = require('../lib/intent');
+const handsoff = require('../lib/handsoff');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
@@ -85,10 +86,12 @@ function run(input) {
     const cmd = configuredCmd(root.trim());
     if (cmd && all.length) fixed.push(`Check command: ${cmd}`);
   }
+  // Hands-off repo: every edit prompt gets steps instead of edits, corrections included; only an apply goes through.
+  const handsOff = Boolean(repo) && kind === 'edit' && !handsoff.isApply(prompt) && handsoff.active(repo, { root: root.trim() });
   const tc = root && kind !== 'advice' ? typecheckCmd(root.trim()) : '';
-  if (tc) fixed.push(TYPECHECK_LINE);
-  const intent = correctionLine(prompt, hadPrev) || readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) }).line;
-  fixed.push(intent, probeLine(prompt));
+  if (tc && !handsOff) fixed.push(TYPECHECK_LINE);
+  const intent = handsOff ? HANDSOFF_LINE : correctionLine(prompt, hadPrev) || readIntent(prompt, { kind, mode: intentMode(root ? root.trim() : cwd) }).line;
+  fixed.push(intent, handsOff ? '' : probeLine(prompt));
   capFixed(fixed, [tc && TYPECHECK_LINE, fixed[fixed.length - 1], intent, SELF_SHORT]);
   // A learned rule is worth more than the long form of the self-classification line.
   if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;

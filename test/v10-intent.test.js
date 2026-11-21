@@ -131,3 +131,19 @@ test('a commit habit stated in one repo is not injected in another', () => {
   assert.match(inject({ prompt: 'add a footer', cwd: a, session_id: 'h2' }, home), /Commit after each small completed change/);
   assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'h3' }, home), /Commit after each small completed change/);
 });
+
+test('a hands-off repo gets the steps line on edit prompts and nothing that asks for edits', () => {
+  const home = tmp('buc-home-');
+  const dir = repo({ 'package.json': JSON.stringify({ scripts: { typecheck: 'tsc' } }) });
+  const key = require('../lib/context').repoKey(fs.realpathSync(dir));
+  fs.writeFileSync(path.join(home, 'repos.json'), JSON.stringify({ [key]: { handsOff: 'on', events: [] } }));
+  const ctx = inject({ prompt: 'add a sound when the intro animation plays', cwd: dir, session_id: 'ho1' }, home);
+  assert.strictEqual(ctx, "In this repo the user usually wants the steps, not edits. Do not edit: list exact files, lines and commands, then end with: Say 'apply' and I will make these edits.");
+  const fix = inject({ prompt: 'no thats not what i meant', cwd: dir, session_id: 'ho1' }, home);
+  assert.match(fix, /Do not edit: list exact files/);
+  assert.doesNotMatch(fix, /redo it that way/);
+  for (const p of ['apply', 'ok go ahead']) assert.doesNotMatch(inject({ prompt: p, cwd: dir, session_id: 'ho1' }, home), /Do not edit/, p);
+  assert.match(inject({ prompt: 'explain how the router works', cwd: dir, session_id: 'ho2' }, home), /show or explain/);
+  assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: dir, session_id: 'ho3' }, home, { BUC_OFF: 'handsoff' }), /Do not edit/);
+  assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'ho4' }, home), /Do not edit/);
+});
