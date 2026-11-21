@@ -129,7 +129,10 @@ function patchOf(dir, preUntracked = [], base) {
   if (fresh.length) git('add', '-N', '--', ...fresh);
   const stat = git('diff', '--numstat', root).trim().split('\n').filter(Boolean)
     .map((l) => { const [a, d, f] = l.split('\t'); return { file: f, added: +a || 0, deleted: +d || 0 }; });
-  return { root, stat, patch: git('diff', root).slice(0, 20000) };
+  const patch = git('diff', root).slice(0, 20000);
+  // Drop the intent-to-add entries again so a mid-run snapshot leaves the index as the agent left it.
+  if (fresh.length) git('reset', '-q', '--', ...fresh);
+  return { root, stat, patch };
 }
 
 // Control arm: the same rules as static bullets. Excluded via .git/info/exclude so the file is not part of the patch.
