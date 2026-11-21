@@ -150,6 +150,18 @@ test('a hands-off repo gets the steps line on edit prompts and nothing that asks
   assert.doesNotMatch(inject({ prompt: 'add a footer', cwd: repo(), session_id: 'ho4' }, home), /Do not edit/);
 });
 
+test('a short fix follow-up counts as still wrong, not as a new request', () => {
+  const pattern = (p, prev = true) => intent.readCorrection(p, prev).pattern;
+  for (const p of ['fix these changes', 'fix it', 'Fix it.', 'still not right', 'its wrong', "it's wrong", 'no fix that', 'please fix this', 'thats broken', 'not right']) {
+    assert.strictEqual(pattern(p), 'still', p);
+    assert.match(intent.correctionLine(p, true), /still wrong from the user/, p);
+  }
+  assert.strictEqual(pattern('fix it', false), '', 'first turn');
+  for (const p of ['fix the login button', 'add a logout button', 'fix these changes so that the footer also gets the new colour', 'the wrong password message needs a red border on it', 'wrong, i meant the top bar']) assert.strictEqual(pattern(p), '', p);
+  assert.strictEqual(intent.readCorrection('no thats not what i meant', true).name, 'MISREAD');
+  assert.strictEqual(intent.readCorrection('no wait undo it just show me', true).name, 'UNDO');
+});
+
 test('readCorrection names the undo and misread readings', () => {
   const name = (p) => intent.readCorrection(p, true).name;
   assert.strictEqual(name('no wait undo ur changes just show me how'), 'UNDO');
