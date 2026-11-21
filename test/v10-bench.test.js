@@ -216,3 +216,26 @@ test('leaks: conservative on rule keywords and near-duplicates of mined correcti
   assert.match(mc.leaks(cand({ c: { idx: 2, text: 'dont commit that yet!', cue: true, visible: true } }), RULES, visible), /near-duplicate/);
 });
 
+test('criteria: each mechanical reject has its reason', () => {
+  const ctx = { labels: { 'aaaaaaaa-001': { label: 'correction' } }, rules: RULES, visible: [], used: [], skipRepos: ['/r/plugin'] };
+  assert.strictEqual(mc.rejectCorrection(cand(), ctx), null);
+  const why = (over, c = ctx) => mc.rejectCorrection(cand(over), c);
+  assert.strictEqual(why({ repo: null }), 'no repo for cwd');
+  assert.strictEqual(why({ repo: '/r/plugin/sub' }), 'excluded repo');
+  assert.strictEqual(why({ p: { text: 'x '.repeat(81), image: false } }), 'P over 80 words');
+  assert.strictEqual(why({ p: { text: 'change the header colour to dark green please', image: true } }), 'P has an image');
+  assert.strictEqual(why({ p: { text: 'still broken', image: false } }), 'P not standalone');
+  assert.strictEqual(why({ fix: null }), 'no fix commit after C');
+  assert.strictEqual(why({ fix_lines: 301 }), 'base..fix over 300 lines');
+  assert.strictEqual(why({ work: 0 }), 'no assistant edits after P');
+  assert.strictEqual(why({}, { ...ctx, labels: {} }), 'unlabelled');
+  assert.match(why({}, { ...ctx, labels: { 'aaaaaaaa-001': { label: 'new-request' } } }), /not a correction/);
+  assert.strictEqual(why({}, { ...ctx, used: [{ session: 's1', idx: 5 }] }), 'within 3 turns of an existing case');
+  assert.strictEqual(why({}, { ...ctx, used: [{ session: 's1', idx: 6 }] }), null);
+  const ctl = { ...ctx, labels: { 'aaaaaaaa-001': { label: 'accepted' } } };
+  const ok = cand({ ack: true, c: { idx: 3, text: 'add a dark mode toggle', cue: false, visible: false } });
+  assert.strictEqual(mc.rejectControl(ok, ctl), null);
+  assert.strictEqual(mc.rejectControl({ ...ok, ack: false }, ctl), 'no go-ahead after the request');
+  assert.strictEqual(mc.rejectControl(cand({ ack: true }), ctl), 'next turn has a correction cue');
+});
+

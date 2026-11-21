@@ -270,4 +270,20 @@ function rejectCorrection(c, ctx) {
   return leaks(c, ctx.rules || [], ctx.visible || []);
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection };
+// Control: the request was followed by a commit and the next turn is neither cued nor labelled a correction.
+function rejectControl(c, ctx) {
+  const common = rejectCommon(c, ctx);
+  if (common) return common;
+  if (c.c.cue) return 'next turn has a correction cue';
+  if (!c.done) return 'no commit before the next turn';
+  if (!c.work) return 'no assistant edits after P';
+  if (!c.ack) return 'no go-ahead after the request';
+  if (c.done_lines === null || c.done_lines === 0) return 'empty base..done';
+  if (c.done_lines > 300) return 'base..done over 300 lines';
+  const label = (ctx.labels || {})[c.id];
+  if (!label) return 'unlabelled';
+  if (label.label !== 'accepted') return `not an accepted request (${label.label})`;
+  return null;
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl };
