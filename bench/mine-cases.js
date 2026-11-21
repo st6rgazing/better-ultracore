@@ -310,4 +310,15 @@ function chain(cands, labels) {
   return { cands: out.filter((c) => !absorbed.has(c.id)), absorbed };
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl };
+// Seeded Fisher-Yates over a copy sorted by id, so the order depends only on the seed and the ids.
+function shuffle(items, seed) {
+  const a = [...items].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  const next = rng(seed);
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle };
