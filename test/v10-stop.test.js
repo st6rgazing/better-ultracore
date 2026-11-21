@@ -63,4 +63,13 @@ test('checkSession reads a bare turn file without throwing and honours BUC_OFF p
   });
 });
 
-module.exports = { repo, turn, run, write, tmp, git, hook, withEnv };
+test('deletedFiles lists files removed this turn, committed or not, and not ones deleted before it', () => {
+  const dir = repo({ 'a.js': 'a\n', 'b.js': 'b\n', 'c.js': 'c\n' });
+  fs.unlinkSync(path.join(dir, 'c.js'));
+  const t = turn(dir, 'tidy up');
+  assert.deepStrictEqual(check.deletedFiles(dir, t), []);
+  fs.unlinkSync(path.join(dir, 'a.js'));
+  git(dir, 'rm', '-q', 'b.js');
+  git(dir, 'commit', '-qm', 'drop b');
+  assert.deepStrictEqual(check.deletedFiles(dir, t).sort(), ['a.js', 'b.js']);
+});
