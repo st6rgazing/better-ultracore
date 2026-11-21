@@ -404,20 +404,30 @@ function rebuild(repo, base, picks) {
 
 const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
+// prompt.txt: the request, verbatim. When it does not stand alone, the user turns before it (c.context,
+// oldest first, verbatim) go in front, a blank line between.
+const promptText = (c) => [...(c.context || []), c.p.text].join('\n\n');
+
 // Step 4: the mechanical files of a case. accept.sh and solve-notes.md are written by hand afterwards.
 // wrong.sh restores the last commit before C, the state the correction reacted to; the first commit after P
-// is kept in case.json as first_after_p.
+// is kept in case.json as first_after_p. A rebuilt state (c.fix_patch, c.wrong_patch: patches from base) has
+// no commit of its own: the patch is stored beside the script that applies it and the picks go in case.json.
 function writeCase(dir, c, { deps } = {}) {
   fs.mkdirSync(dir, { recursive: true });
   const fix = c.control ? c.done : c.fix;
   const wrong = c.control ? null : c.done;
   const put = (name, body, mode) => fs.writeFileSync(path.join(dir, name), body, mode ? { mode } : undefined);
-  put('prompt.txt', `${c.p.text}\n`);
+  const checkout = (sha) => `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${sha} -- .\n`;
+  const apply = (file) => `#!/bin/sh\nset -e\ngit -C "$1" apply --whitespace=nowarn "$(cd "$(dirname "$0")" && pwd)/${file}"\n`;
+  put('prompt.txt', `${promptText(c)}\n`);
   if (!c.control) put('followup.txt', `${c.c.text}\n`);
-  put('case.json', `${JSON.stringify({ repo: c.repo, base: c.base, wrong, first_after_p: c.wrong, fix, session: c.session, ts: c.p.ts, control: !!c.control, kind: c.kind || null, ui: !!c.ui }, null, 2)}\n`);
+  const meta = { repo: c.repo, base: c.base, wrong: c.wrong_patch ? null : wrong, first_after_p: c.wrong, fix: c.fix_patch ? null : fix, session: c.session, ts: c.p.ts, control: !!c.control, kind: c.kind || null, ui: !!c.ui };
+  if (c.rebuilt) meta.rebuilt = c.rebuilt;
+  if ((c.context || []).length) meta.context_turns = c.context.length;
+  put('case.json', `${JSON.stringify(meta, null, 2)}\n`);
   put('setup.sh', `#!/bin/sh\nset -e\ngit clone --quiet ${sq(c.repo)} "$1"\ngit -C "$1" checkout --quiet ${c.base}\n${deps ? `sh ${sq(deps)} ${sq(c.repo)} "$1"\n` : ''}`, 0o755);
-  put('solve.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${fix} -- .\n`, 0o755);
-  if (wrong && wrong !== fix) put('wrong.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${wrong} -- .\n`, 0o755);
+  if (c.fix_patch) { put('fix.patch', c.fix_patch); put('solve.sh', apply('fix.patch'), 0o755); } else put('solve.sh', checkout(fix), 0o755);
+  if (c.wrong_patch) { put('wrong.patch', c.wrong_patch); put('wrong.sh', apply('wrong.patch'), 0o755); } else if (wrong && wrong !== fix) put('wrong.sh', checkout(wrong), 0o755);
 }
 
 // Step 6: the dry check of one case in fresh clones. A case is good only when accept fails at base,
@@ -543,5 +553,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, promptText, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));

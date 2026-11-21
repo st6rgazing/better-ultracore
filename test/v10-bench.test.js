@@ -394,6 +394,23 @@ test('writeCase writes the mechanical files; the dry check passes a good case', 
   } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
 });
 
+test('writeCase: rebuilt states are stored as patches from base and pass the dry check; context turns lead the prompt', () => {
+  const fx = fixture();
+  try {
+    const dir = path.join(fx.dir, 'case-rebuilt');
+    const wrong = mc.rebuild(fx.repo, fx.sha.base, [fx.sha.wrong]);
+    const fix = mc.rebuild(fx.repo, fx.sha.base, [fx.sha.wrong, fx.sha.fix]);
+    mc.writeCase(dir, { repo: fx.repo, base: fx.sha.base, wrong: null, done: null, fix: null, wrong_patch: wrong.patch, fix_patch: fix.patch, rebuilt: { wrong: [fx.sha.wrong], fix: [fx.sha.wrong, fx.sha.fix] }, context: ['the fee page first', 'and the yearly plan'], session: SID, p: { text: 'make it five', ts: T(10) }, c: { text: 'C text' }, kind: 'narrow', ui: false });
+    fs.writeFileSync(path.join(dir, 'accept.sh'), '#!/bin/sh\ncd "$1" || exit 1\ngrep -qx right fee.txt\n', { mode: 0o755 });
+    assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['accept.sh', 'case.json', 'fix.patch', 'followup.txt', 'prompt.txt', 'setup.sh', 'solve.sh', 'wrong.patch', 'wrong.sh']);
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8'), 'the fee page first\n\nand the yearly plan\n\nmake it five\n');
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, 'case.json'), 'utf8'));
+    assert.deepStrictEqual([meta.wrong, meta.fix, meta.context_turns, meta.rebuilt.fix.length], [null, null, 2, 2]);
+    const r = mc.verifyCase(dir);
+    assert.deepStrictEqual([r.base_fails, r.wrong_fails, r.fix_passes, r.ok], [true, true, true, true]);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
 test('the dry check rejects a case whose wrong passes, and one whose base passes', () => {
   const fx = fixture();
   try {
