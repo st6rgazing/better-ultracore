@@ -33,13 +33,11 @@ function inject(input, home, env = {}) {
 }
 const turn = (home, id) => JSON.parse(fs.readFileSync(path.join(home, `turn-${id}.json`), 'utf8'));
 
-test('the misread line checks the request item by item and exits when all are met', () => {
+test('the misread line has an exit when no other reading fits', () => {
   const line = intent.correctionLine('no thats not what i meant', true);
-  assert.doesNotMatch(line, /different reading/);
-  assert.match(line, /Re-read the original request\. List each thing it asked for and whether the current state meets it/);
-  assert.match(line, /Fix only the unmet items/);
-  assert.match(line, /If every item is met, change nothing: show the exact before and after[^.]*and stop\./);
-  assert.ok(line.length <= 330, String(line.length));
+  assert.match(line, /different reading/);
+  assert.match(line, /If no other reading fits the user's words, change nothing: show the exact before and after/);
+  assert.ok(line.length <= 400, String(line.length));
 });
 
 test('the guide-icons and house-rules prompt shapes get the self-classification line', () => {
