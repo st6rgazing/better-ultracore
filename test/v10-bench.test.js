@@ -294,3 +294,48 @@ test('sample: fewer survivors than the target ships fewer, and neighbours in one
   assert.ok(got.includes('c'));
 });
 
+// A case dir over the fixture repo; accept passes when fee.txt holds one of `passing`.
+function caseDir(fx, passing) {
+  const dir = path.join(fx.dir, `case-${passing.join('-')}`);
+  mc.writeCase(dir, { repo: fx.repo, base: fx.sha.base, wrong: fx.sha.wrong, done: fx.sha.wrong, fix: fx.sha.fix, session: SID, p: { text: 'P text', ts: T(10) }, c: { text: 'C text' }, kind: 'wide', ui: false });
+  fs.writeFileSync(path.join(dir, 'accept.sh'), `#!/bin/sh\ncd "$1" || exit 1\n${passing.map((w) => `grep -qx ${w} fee.txt && exit 0`).join('\n')}\nexit 1\n`, { mode: 0o755 });
+  return dir;
+}
+
+test('writeCase writes the mechanical files; the dry check passes a good case', () => {
+  const fx = fixture();
+  try {
+    const dir = caseDir(fx, ['right']);
+    assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['accept.sh', 'case.json', 'followup.txt', 'prompt.txt', 'setup.sh', 'solve.sh', 'wrong.sh']);
+    assert.strictEqual(fs.readFileSync(path.join(dir, 'followup.txt'), 'utf8'), 'C text\n');
+    const meta = JSON.parse(fs.readFileSync(path.join(dir, 'case.json'), 'utf8'));
+    assert.deepStrictEqual([meta.base, meta.wrong, meta.fix, meta.control], [fx.sha.base, fx.sha.wrong, fx.sha.fix, false]);
+    const r = mc.verifyCase(dir);
+    assert.deepStrictEqual([r.base_fails, r.wrong_fails, r.fix_passes, r.ok], [true, true, true, true]);
+    // the source repo is only cloned from
+    assert.strictEqual(spawnSync('git', ['-C', fx.repo, 'status', '--porcelain'], { encoding: 'utf8' }).stdout, '');
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test('the dry check rejects a case whose wrong passes, and one whose base passes', () => {
+  const fx = fixture();
+  try {
+    const loose = mc.verifyCase(caseDir(fx, ['right', 'wrong']));
+    assert.strictEqual(loose.wrong_fails, false);
+    assert.strictEqual(loose.ok, false);
+    const vacuous = mc.verifyCase(caseDir(fx, ['right', 'wrong', 'old']));
+    assert.strictEqual(vacuous.base_fails, false);
+    assert.strictEqual(vacuous.ok, false);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
+test('a control has no follow-up and no wrong state', () => {
+  const fx = fixture();
+  try {
+    const dir = path.join(fx.dir, 'ctl');
+    mc.writeCase(dir, { control: true, repo: fx.repo, base: fx.sha.base, wrong: fx.sha.wrong, done: fx.sha.wrong, fix: null, session: SID, p: { text: 'P', ts: T(10) }, c: { text: 'next' } });
+    assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['case.json', 'prompt.txt', 'setup.sh', 'solve.sh']);
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'case.json'), 'utf8')).fix, fx.sha.wrong);
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

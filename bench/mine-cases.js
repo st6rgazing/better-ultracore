@@ -367,4 +367,27 @@ function writeCase(dir, c, { deps } = {}) {
   if (wrong && wrong !== fix) put('wrong.sh', `#!/bin/sh\nset -e\ngit -C "$1" checkout --quiet ${wrong} -- .\n`, 0o755);
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, DEFAULT_QUOTAS };
+// Step 6: the dry check of one case in fresh clones. A case is good only when accept fails at base,
+// fails at wrong (when there is a wrong.sh) and passes at fix.
+function verifyCase(dir) {
+  const stage = (script) => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'heldout-dry-'));
+    const work = path.join(parent, 'work');
+    try {
+      const sh = (s) => spawnSync('sh', [path.join(dir, s), work], { encoding: 'utf8' });
+      const s = sh('setup.sh');
+      if (s.status !== 0) return { error: `setup failed: ${(s.stderr || '').slice(0, 200)}` };
+      if (script && sh(script).status !== 0) return { error: `${script} failed` };
+      return { pass: sh('accept.sh').status === 0 };
+    } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+  };
+  const base = stage(null);
+  const wrong = fs.existsSync(path.join(dir, 'wrong.sh')) ? stage('wrong.sh') : null;
+  const fix = stage('solve.sh');
+  const error = [base, wrong, fix].map((x) => x && x.error).find(Boolean) || null;
+  const out = { case: path.basename(dir), base_fails: base.pass === false, wrong_fails: wrong ? wrong.pass === false : null, fix_passes: fix.pass === true, error };
+  out.ok = !error && out.base_fails && out.wrong_fails !== false && out.fix_passes;
+  return out;
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, DEFAULT_QUOTAS };
