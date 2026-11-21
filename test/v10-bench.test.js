@@ -239,3 +239,20 @@ test('criteria: each mechanical reject has its reason', () => {
   assert.strictEqual(mc.rejectControl(cand({ ack: true }), ctl), 'next turn has a correction cue');
 });
 
+test('chain: a corrected correction becomes one case with the later fix', () => {
+  const fx = fixture();
+  try {
+    const a = cand({ id: 'aaaaaaaa-001', idx: 1, repo: fx.repo, base: fx.sha.base, fix: fx.sha.wrong, c: { idx: 2, text: 'centre it', cue: false, visible: false } });
+    const b = cand({ id: 'aaaaaaaa-002', idx: 2, repo: fx.repo, base: fx.sha.wrong, fix: fx.sha.fix, p: { text: 'centre it' }, c: { idx: 4, text: 'under the title', cue: false, visible: false } });
+    const other = cand({ id: 'aaaaaaaa-004', idx: 4, c: { idx: 5, text: 'new thing', cue: false, visible: false } });
+    const labels = { 'aaaaaaaa-001': { label: 'correction' }, 'aaaaaaaa-002': { label: 'correction' }, 'aaaaaaaa-004': { label: 'new-request' } };
+    const r = mc.chain([a, b, other], labels);
+    assert.deepStrictEqual(r.cands.map((c) => c.id), ['aaaaaaaa-001', 'aaaaaaaa-004']);
+    assert.strictEqual(r.cands[0].fix, fx.sha.fix);
+    assert.strictEqual(r.cands[0].last_idx, 4);
+    assert.deepStrictEqual(r.cands[0].later, ['under the title']);
+    assert.strictEqual(r.cands[0].c.text, 'centre it');
+    assert.strictEqual(r.absorbed.get('aaaaaaaa-002'), 'aaaaaaaa-001');
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+

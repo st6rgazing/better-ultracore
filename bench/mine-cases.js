@@ -286,4 +286,28 @@ function rejectControl(c, ctx) {
   return null;
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl };
+// A correction that is itself corrected is not fixed yet. When the pair starting at a candidate's C is also
+// labelled a correction, the two are one case: the first keeps its P and C, takes the later fix, and the later
+// pair is dropped. Repeats down the chain. Returns the merged candidates and the ids absorbed into each.
+function chain(cands, labels) {
+  const isCorr = (c) => !!c && (labels[c.id] || {}).label === 'correction';
+  const at = new Map(cands.map((c) => [`${c.session}|${c.idx}`, c]));
+  const absorbed = new Map();
+  const out = [];
+  for (const c of cands) {
+    if (!isCorr(c) || absorbed.has(c.id)) { out.push(c); continue; }
+    let last = c;
+    const ids = [];
+    for (let next = at.get(`${c.session}|${last.c.idx}`); isCorr(next); next = at.get(`${c.session}|${last.c.idx}`)) {
+      ids.push(next.id);
+      absorbed.set(next.id, c.id);
+      last = next;
+    }
+    if (!ids.length) { out.push(c); continue; }
+    const stat = diffStat(c.repo, c.base, last.fix);
+    out.push({ ...c, fix: last.fix, n_ts: last.n_ts, fix_lines: stat.lines, fix_files: stat.files, chain: ids, last_idx: last.c.idx, later: ids.map((id) => at.get(`${c.session}|${cands.find((x) => x.id === id).idx}`).c.text) });
+  }
+  return { cands: out.filter((c) => !absorbed.has(c.id)), absorbed };
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl };
