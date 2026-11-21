@@ -345,4 +345,88 @@ test('Stop does nothing without a session, a turn file or a baseline', () => {
   assert.strictEqual(hook('stop-check.js', { session_id: 'bare', last_assistant_message: 'what?' }, home), null);
 });
 
+const track = require('../hooks/track');
+const batch = (n, extra = {}) => ({ session_id: 't', hook_event_name: 'PostToolBatch', tool_calls: Array.from({ length: n }, () => ({ tool_name: 'Read', tool_input: {} })), ...extra });
+
+test('track counts tool calls per turn and fires exactly at the budget and at twice it', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => {
+    store.writeTurn('t', turn(dir, 'set the title to Home', { session_id: 't', intent: 'LITERAL' }));
+    const fired = [];
+    for (let i = 1; i <= 45; i++) {
+      const out = track.run(batch(1, { cwd: dir }));
+      if (out) fired.push([i, out.hookSpecificOutput.additionalContext]);
+    }
+    assert.deepStrictEqual(fired.map((f) => f[0]), [20, 40]);
+    assert.strictEqual(fired[0][1], 'Budget: 20 tool calls on a small request. Stop exploring, finish the edit you have, report what is unverified.');
+    assert.strictEqual(store.readTurn('t').toolCalls, 45);
+    assert.strictEqual(store.readTurn('t').intent, 'LITERAL', 'other turn fields are kept');
+    // A new prompt writes a fresh turn file: the count starts again.
+    store.writeTurn('t', turn(dir, 'add a settings page', { session_id: 't', intent: 'SELF' }));
+    assert.strictEqual(track.run(batch(44, { cwd: dir })), null);
+    assert.strictEqual(store.readTurn('t').toolCalls, 44);
+    const out = track.run(batch(3, { cwd: dir }));
+    assert.strictEqual(out.hookSpecificOutput.hookEventName, 'PostToolBatch');
+    assert.match(out.hookSpecificOutput.additionalContext, /^Budget: 47 tool calls on one request\./);
+    assert.strictEqual(track.run(batch(1, { cwd: dir })), null, 'only once per threshold');
+  });
+});
+
+test('track: a batch that jumps the threshold fires once, a missing intent uses the large budget, config and BUC_OFF apply', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => {
+    store.writeTurn('t', turn(dir, 'fix it', { session_id: 't', intent: 'MISREAD' }));
+    assert.strictEqual(track.run(batch(19, { cwd: dir })), null);
+    assert.match(track.run(batch(5, { cwd: dir })).hookSpecificOutput.additionalContext, /^Budget: 24 tool calls/);
+    assert.strictEqual(track.budget({}, dir), 45);
+    assert.strictEqual(track.budget({ intent: 'SELF' }, dir), 45);
+    assert.strictEqual(track.budget({ intent: 'UNDO' }, dir), 20);
+    write(dir, '.claude/buc.json', JSON.stringify({ toolBudget: { small: 3 } }));
+    assert.strictEqual(track.budget({ intent: 'UNDO' }, dir), 3);
+    assert.strictEqual(track.budget({ intent: 'SELF' }, dir), 45);
+    write(dir, '.claude/buc.json', JSON.stringify({ toolBudget: 7 }));
+    assert.strictEqual(track.budget({ intent: 'SELF' }, dir), 7);
+    write(dir, '.claude/buc.json', JSON.stringify({ toolBudget: false }));
+    assert.strictEqual(track.budget({ intent: 'UNDO' }, dir), 0);
+    fs.unlinkSync(path.join(dir, '.claude/buc.json'));
+  });
+  withEnv({ BUC_HOME: home, BUC_OFF: 'budget' }, () => {
+    store.writeTurn('t', turn(dir, 'fix it', { session_id: 't', intent: 'MISREAD' }));
+    assert.strictEqual(track.run(batch(25, { cwd: dir })), null);
+    assert.strictEqual(store.readTurn('t').toolCalls, 25, 'still counted when the notice is off');
+  });
+});
+
+test('track works with no turn file, a PostToolUse input and a subagent, and notes a buc-shot call', () => {
+  const home = tmp('buc-home-');
+  withEnv({ BUC_HOME: home, BUC_OFF: '', BUC_NOW: '1700000000000' }, () => {
+    assert.strictEqual(track.run({}), null);
+    assert.strictEqual(track.run({ session_id: 'n', tool_calls: [] }), null);
+    assert.strictEqual(track.run({ session_id: 'n', hook_event_name: 'PostToolUse', tool_name: 'Edit', tool_input: {} }), null);
+    assert.deepStrictEqual(store.readTurn('n'), { session_id: 'n', toolCalls: 1 });
+    assert.strictEqual(track.run({ ...batch(30), session_id: 'n', agent_id: 'agent-1' }), null);
+    assert.strictEqual(store.readTurn('n').toolCalls, 1, 'subagent calls are not counted');
+    track.run({ session_id: 'n', tool_calls: [{ tool_name: 'Bash', tool_input: { command: 'node /p/bin/buc-shot --path /' } }] });
+    assert.strictEqual(store.readTurn('n').shotAt, 1700000000000);
+  });
+});
+
+test('track runs under 60 ms per call and the hook script prints valid JSON', () => {
+  const dir = repo();
+  const home = tmp('buc-home-');
+  withEnv({ BUC_HOME: home, BUC_OFF: '' }, () => {
+    store.writeTurn('t', turn(dir, 'set the title', { session_id: 't', intent: 'LITERAL' }));
+    track.run(batch(1, { cwd: dir }));
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 10; i++) track.run(batch(1, { cwd: dir }));
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6 / 10;
+    assert.ok(ms < 60, `${ms} ms per call`);
+  });
+  const out = hook('track.js', batch(9, { cwd: dir }), home);
+  assert.match(out.hookSpecificOutput.additionalContext, /^Budget: 20 tool calls/);
+  assert.strictEqual(hook('track.js', batch(1, { cwd: dir }), home), null);
+});
+
 // end
