@@ -250,3 +250,38 @@ test('normalize keeps origin, sources and scope, and never keeps text in sources
   assert.strictEqual(store.normalize({ ...RULE, origin: 'nonsense' }).rule.origin, 'import');
   assert.strictEqual(store.normalize({ ...RULE, sources: [src('A', 0, 'aaaaaaaaaaaa', { origin: 'bump' })] }).rule.origin, 'import');
 });
+
+test('importRules merges sources on upsert and keeps an existing scope and origin', () => {
+  fresh();
+  store.importRules([{ ...RULE, origin: 'habit', pinned: true, scope: { repos: ['r1'] }, sources: [src('A', 0)] }]);
+  store.importRules([{ ...RULE, rule: 'Change only what was named.', sources: [src('A', 0), src('B', 1, 'bbbbbbbbbbbb')] }]);
+  const [r] = store.loadRules();
+  assert.deepStrictEqual([r.rule, r.origin, r.pinned, r.scope], ['Change only what was named.', 'habit', true, { repos: ['r1'] }]);
+  assert.deepStrictEqual(r.sources.map((x) => x.session), ['A', 'B']);
+});
+
+test('importRules upgrades an import-origin rule to learn when sources arrive', () => {
+  fresh();
+  store.importRules([RULE]);
+  assert.strictEqual(store.loadRules()[0].origin, 'import');
+  store.importRules([{ ...RULE, sources: [src('A', 0)] }]);
+  assert.strictEqual(store.loadRules()[0].origin, 'learn');
+});
+
+test('importRules fills bare source hashes from the inbox', () => {
+  fresh();
+  const text = 'no, only the header';
+  store.appendInbox([
+    { ts: '2026-06-02T00:00:00.000Z', session_id: 'S1', text, repo: 'r1', h: store.hash(text) },
+    { ts: '2026-06-03T00:00:00.000Z', session_id: 'S0', text: 'still broken on mobile' },
+  ]);
+  store.importRules([{ ...RULE, sources: [store.hash(text), { h: store.hash('still broken on mobile') }, 'cccccccccccc'] }]);
+  const [r] = store.loadRules();
+  assert.deepStrictEqual(r.sources, [
+    { session: 'S1', repo: 'r1', ts: '2026-06-02T00:00:00.000Z', h: store.hash(text) },
+    { session: 'S0', repo: '', ts: '2026-06-03T00:00:00.000Z', h: store.hash('still broken on mobile') },
+    { session: '', repo: '', ts: '', h: 'cccccccccccc' },
+  ]);
+  assert.strictEqual(r.origin, 'learn');
+  assert.ok(!JSON.stringify(r).includes('header'));
+});
