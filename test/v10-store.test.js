@@ -181,3 +181,32 @@ test('hands-off: an explicit setting overrides the evidence, and BUC_OFF=handsof
   store.setRepo('r', { handsOff: 'on' });
   withEnv({ BUC_OFF: 'handsoff' }, () => assert.strictEqual(modeAt('r', 3).mode, 'off'));
 });
+
+test('handsoff.record stores statement, apply and edit events, names only', () => {
+  const home = fresh();
+  const rec = (prompt, sessionId, kind) => handsoff.record({ prompt, repo: 'r', sessionId, kind, ts: T0 });
+  assert.strictEqual(rec('make the header blue', 'a'), 'edit');
+  assert.strictEqual(rec('apply', 'a'), null);
+  assert.strictEqual(rec("don't change anything, just tell me why the build fails", 'a'), 'handsoff');
+  assert.strictEqual(rec('ok do it', 'a'), 'apply');
+  assert.strictEqual(rec('go ahead', 'a'), null);
+  assert.strictEqual(rec('explain how routing works, do not change the code', 'a'), null);
+  assert.strictEqual(rec('why is this slow', 'a', 'advice'), null);
+  assert.strictEqual(rec('', 'a'), null);
+  assert.strictEqual(handsoff.record({ prompt: 'show me how', repo: null, sessionId: 'a' }), null);
+  assert.strictEqual(handsoff.record(), null);
+  assert.deepStrictEqual(store.repoState('r').events.map((e) => e.e), ['edit', 'handsoff', 'apply']);
+  assert.ok(!/header|build|change/.test(fs.readFileSync(path.join(home, 'repos.json'), 'utf8')));
+});
+
+test('handsoff.record feeds mode through real prompts', () => {
+  fresh();
+  const rec = (prompt, sessionId, day) => handsoff.record({ prompt, repo: 'r', sessionId, ts: T0 + day * DAY });
+  rec('show me how to add a tab', 'a', 0);
+  rec('just show me the diff you would make', 'b', 1);
+  rec('undo your changes', 'b', 2);
+  rec('add a footer link', 'b', 3);
+  assert.deepStrictEqual(modeAt('r', 4), { mode: 'auto-active', events: 3, sessions: 2, edits: 1, ratio: 0.75 });
+  rec('go ahead', 'b', 4);
+  assert.strictEqual(modeAt('r', 5).mode, 'auto-idle');
+});
