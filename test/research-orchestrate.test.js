@@ -47,3 +47,28 @@ test('line honours the midturn, keyword and solo BUC_OFF names', () => withEnv({
   assert.strictEqual(orch.line('what is ultracode'), '');
   assert.strictEqual(orch.line('ultracode fix the typo'), '');
 }));
+
+test('the prompt hook adds the orchestration line inside the caps and keeps the self line whole', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const store = require('../lib/rules/store');
+  const inject = require('../hooks/inject');
+  const { SELF } = require('../lib/intent');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-orch-'));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-orch-cwd-'));
+  withEnv({ BUC_HOME: home, BUC_OFF: '', BUC_NOW: '1700000000000' }, () => {
+    const ctx = (prompt, session = 'o') => {
+      const out = inject.run({ prompt, cwd, session_id: session, transcript_path: '' });
+      return out ? out.hookSpecificOutput.additionalContext : '';
+    };
+    const solo = ctx('ultracode fix the typo in the footer');
+    assert.ok(solo.endsWith(orch.SOLO), solo);
+    assert.ok(solo.includes(SELF), 'the long self line still fits');
+    assert.ok(solo.length <= 500);
+    assert.ok(ctx('explain what the ultracode keyword does').includes(orch.NOT_OPTIN));
+    assert.ok(!ctx('fix the typo in the footer').includes('agents'));
+    store.patchTurn('mid', { agents: 2, agentAt: 1700000000000 - 5000 });
+    assert.ok(ctx('also leave the tests alone', 'mid').includes(orch.MIDTURN));
+  });
+});

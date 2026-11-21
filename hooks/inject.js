@@ -13,6 +13,7 @@ const { readIntent, intentMode, readCorrection, SELF, SELF_SHORT, HANDSOFF_LINE,
 const handsoff = require('../lib/handsoff');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
+const orchestrate = require('../lib/orchestrate');
 
 const MAX_CONTEXT = 800;
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || path.join(__dirname, '..');
@@ -97,8 +98,10 @@ function run(input) {
   // A first-turn UI edit with a dev server to shoot: tell the agent how to look at the result.
   const shot = root && kind === 'edit' && !handsOff && !correction.line && !handsoff.isApply(prompt) && isUiPrompt(prompt) && uiServer(root.trim()) ? shotLine(PLUGIN_ROOT) : '';
   const probe = handsOff ? '' : probeLine(prompt);
-  fixed.push(intent, probe, shot);
-  capFixed(fixed, [tc && TYPECHECK_LINE, shot, probe, intent, SELF_SHORT]);
+  // The turn file still holds the previous turn here: agents it launched and no Stop since means this prompt arrives mid-run.
+  const orch = handsOff ? '' : orchestrate.line(prompt, { turn: sessionId ? store.readTurn(sessionId) : null, root: root ? root.trim() : cwd });
+  fixed.push(intent, probe, shot, orch);
+  capFixed(fixed, [tc && TYPECHECK_LINE, shot, probe, orch, intent, SELF_SHORT]);
   // A learned rule is worth more than the long form of the self-classification line.
   if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
   // At least the top rule is shown: the typecheck, screenshot and probe lines give way to it, the intent line does not.
