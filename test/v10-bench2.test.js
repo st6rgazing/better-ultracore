@@ -547,4 +547,29 @@ test('intent eval candidates: requests, follow-ups and what happened next', () =
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('intent eval sample keeps pattern fires first and split never divides a unit', () => {
+  const { sample, split } = require('../bench/intent-eval');
+  const row = (i, extra) => ({ id: `r${i}`, unit: `u${i % 7}`, ts: `2026-06-01T00:00:${String(i).padStart(2, '0')}.000Z`, prompt: `prompt ${i}`, followup: false, regex: 'self', ...extra });
+  const rows = [
+    ...Array.from({ length: 30 }, (_, i) => row(i)),
+    ...Array.from({ length: 6 }, (_, i) => row(30 + i, { regex: 'degree' })),
+    ...Array.from({ length: 10 }, (_, i) => row(40 + i, { followup: true, regex: i < 3 ? 'still' : '' })),
+    row(50, { prompt: 'PROMPT 1' }),
+  ];
+  const picked = sample(rows, { requests: 10, followups: 4, perPattern: 5, seed: 3 });
+  assert.strictEqual(picked.filter((r) => !r.followup).length, 10);
+  assert.strictEqual(picked.filter((r) => r.regex === 'degree').length, 5);
+  assert.strictEqual(picked.filter((r) => r.followup).length, 4);
+  assert.strictEqual(picked.filter((r) => r.regex === 'still').length, 3);
+  assert.deepStrictEqual(picked.map((r) => r.ts), picked.map((r) => r.ts).sort());
+  assert.deepStrictEqual(sample(rows, { requests: 10, followups: 4, perPattern: 5, seed: 3 }).map((r) => r.id), picked.map((r) => r.id));
+  // the same prompt text is labelled once
+  assert.ok(sample(rows, { requests: 100, followups: 100 }).filter((r) => /^prompt 1$/i.test(r.prompt)).length === 1);
+  const done = split(rows, 3);
+  const sides = new Map();
+  for (const r of done) { assert.ok(!sides.has(r.unit) || sides.get(r.unit) === r.split); sides.set(r.unit, r.split); }
+  const dev = done.filter((r) => r.split === 'dev').length;
+  assert.ok(Math.abs(dev - (rows.length - dev)) <= 8, `dev ${dev} of ${rows.length}`);
+});
+
 // more tests below

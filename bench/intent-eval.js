@@ -52,4 +52,43 @@ function candidates(sessions) {
   return rows;
 }
 
-module.exports = { candidates, fired, REQUEST_LABELS, FOLLOWUP_LABELS };
+function shuffled(items, next) {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(next() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+// Seeded pick of the rows to label. Rows a fixed-line pattern fires on go first, at most perPattern each, so a rare
+// pattern still gets enough fires to measure; precision is fires that were right over fires, so taking more fires
+// does not bias it. Random rows then fill up to the totals. Repeats of the same prompt text are dropped.
+function sample(rows, { requests = 200, followups = 60, perPattern = 24, seed = 10 } = {}) {
+  const next = rng(seed);
+  const seen = new Set();
+  const unique = shuffled(rows, next).filter((r) => { const k = `${r.followup}|${r.prompt.trim().toLowerCase()}`; return !seen.has(k) && seen.add(k); });
+  const take = (pool, total) => {
+    const count = {};
+    const fires = pool.filter((r) => r.regex && r.regex !== 'self' && (count[r.regex] = (count[r.regex] || 0) + 1) <= perPattern);
+    const rest = pool.filter((r) => !fires.includes(r));
+    return [...fires, ...rest].slice(0, Math.max(total, fires.length));
+  };
+  const picked = [...take(unique.filter((r) => !r.followup), requests), ...take(unique.filter((r) => r.followup), followups)];
+  return picked.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+}
+
+// Assigns each row split 'dev' or 'test' by unit (one session on one day), never splitting a unit: neighbouring
+// turns share wording, so they must not sit on both sides. Largest units first, each to the smaller half.
+function split(rows, seed = 10) {
+  const size = new Map();
+  for (const r of rows) size.set(r.unit, (size.get(r.unit) || 0) + 1);
+  const units = shuffled([...size.keys()].sort(), rng(seed)).sort((a, b) => size.get(b) - size.get(a));
+  const half = { dev: 0, test: 0 };
+  const side = new Map();
+  for (const u of units) {
+    const to = half.dev <= half.test ? 'dev' : 'test';
+    side.set(u, to);
+    half[to] += size.get(u);
+  }
+  return rows.map((r) => ({ ...r, split: side.get(r.unit) }));
+}
+
+module.exports = { candidates, fired, sample, split, REQUEST_LABELS, FOLLOWUP_LABELS };
