@@ -178,15 +178,23 @@ function report(rows, { a = 'buc', b = 'plain', regression = [], B = 10000, seed
 }
 
 // CLI: node bench/stats.js <results.json> [--a buc] [--b plain] [--metric interventions] [--B 10000] [--seed 10]
+//      node bench/stats.js report <heldout results.json>... [--a buc] [--b plain] [--regression old.json[,more.json]] [--B 10000] [--seed 10]
 function main(argv) {
+  const fs = require('node:fs');
   const f = { a: 'buc', b: 'plain', metric: 'interventions', B: '10000', seed: '10' };
   const files = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i].startsWith('--')) f[argv[i].slice(2)] = argv[++i];
     else files.push(argv[i]);
   }
-  const rows = files.flatMap((p) => JSON.parse(require('node:fs').readFileSync(p, 'utf8')));
-  const r = pairedBootstrap(rows, f.a, f.b, f.metric, { B: parseInt(f.B, 10), seed: parseInt(f.seed, 10) });
+  const load = (list) => list.flatMap((p) => JSON.parse(fs.readFileSync(p, 'utf8')));
+  const opts = { B: parseInt(f.B, 10), seed: parseInt(f.seed, 10) };
+  if (files[0] === 'report') {
+    if (files.length < 2) throw new Error('usage: stats.js report <results.json>... [--a buc] [--b plain] [--regression old.json]');
+    const regression = load(String(f.regression || '').split(',').filter(Boolean));
+    return void console.log(report(load(files.slice(1)), { a: f.a, b: f.b, regression, ...opts }));
+  }
+  const r = pairedBootstrap(load(files), f.a, f.b, f.metric, opts);
   console.log(JSON.stringify({ a: f.a, b: f.b, metric: f.metric, ...r }));
 }
 

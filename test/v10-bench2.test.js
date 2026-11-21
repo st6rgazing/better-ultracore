@@ -288,4 +288,25 @@ test('report prints the table, the intervals, six verdict lines and the wording'
   assert.match(open, /Verdict: incomplete: criteria 6 not evaluated$/);
 });
 
+test('stats report CLI reads held-out and regression files', () => {
+  const dir = tmp('report');
+  try {
+    const held = path.join(dir, 'held.json');
+    const more = path.join(dir, 'more.json');
+    const old = path.join(dir, 'old.json');
+    write(held, JSON.stringify(WIN.filter((r) => !r.control)));
+    write(more, JSON.stringify(WIN.filter((r) => r.control)));
+    write(old, JSON.stringify(OLD_OK));
+    const cli = (...args) => spawnSync('node', [path.join(ROOT, 'bench', 'stats.js'), ...args], { encoding: 'utf8' });
+    const r = cli('report', held, more, '--regression', old, '--B', '500');
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stdout, /6 cases with both arms/);
+    assert.match(r.stdout, /^6\. PASS/m);
+    assert.match(r.stdout, /Verdict: v10 generalises/);
+    // the one-metric form still prints a JSON line
+    assert.strictEqual(JSON.parse(cli(held, '--B', '500').stdout).cases, 4);
+    assert.notStrictEqual(cli('report').status, 0);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 // more tests below
