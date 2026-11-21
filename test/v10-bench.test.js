@@ -60,3 +60,19 @@ test('pairedBootstrap: a consistent effect excludes zero, no pairs gives nulls',
   assert.ok(r.hi < 0);
   assert.strictEqual(stats.pairedBootstrap([], 'buc', 'plain', 'interventions').diff, null);
 });
+
+test('stats CLI prints one JSON line', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stats-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'r.json'), JSON.stringify(ROWS));
+    const p = spawnSync('node', [path.join(__dirname, '..', 'bench', 'stats.js'), path.join(dir, 'r.json'), '--B', '500'], { encoding: 'utf8' });
+    assert.strictEqual(p.status, 0, p.stderr);
+    const o = JSON.parse(p.stdout);
+    assert.strictEqual(o.diff, -0.75);
+    assert.strictEqual(o.metric, 'interventions');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

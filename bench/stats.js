@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 'use strict';
 // Statistics for bench results. See bench/README.md.
 
@@ -64,4 +65,18 @@ function pairedBootstrap(rows, armA, armB, metric, { B = 10000, seed = 10, level
   return { diff: avg, lo: quantile(means, (1 - level) / 2), hi: quantile(means, 1 - (1 - level) / 2), cases: n, B, level, seed };
 }
 
+// CLI: node bench/stats.js <results.json> [--a buc] [--b plain] [--metric interventions] [--B 10000] [--seed 10]
+function main(argv) {
+  const f = { a: 'buc', b: 'plain', metric: 'interventions', B: '10000', seed: '10' };
+  const files = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith('--')) f[argv[i].slice(2)] = argv[++i];
+    else files.push(argv[i]);
+  }
+  const rows = files.flatMap((p) => JSON.parse(require('node:fs').readFileSync(p, 'utf8')));
+  const r = pairedBootstrap(rows, f.a, f.b, f.metric, { B: parseInt(f.B, 10), seed: parseInt(f.seed, 10) });
+  console.log(JSON.stringify({ a: f.a, b: f.b, metric: f.metric, ...r }));
+}
+
 module.exports = { rng, value, caseDiffs, quantile, pairedBootstrap };
+if (require.main === module) main(process.argv.slice(2));
