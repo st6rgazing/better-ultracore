@@ -46,6 +46,18 @@ const caseDir = (c) => caseDirs.get(c);
 const read = (c, f) => fs.readFileSync(path.join(caseDir(c), f), 'utf8').trim();
 const has = (c, f) => fs.existsSync(path.join(caseDir(c), f));
 
+// Leave-one-out: rule ids a run must not see. spec is 'self' (the case being run) or a comma list of case names;
+// each named case lists the rules mined from its own session in exclude-rules.json (an array of ids).
+function excludedIds(spec, c) {
+  if (!spec) return [];
+  const names = spec === 'self' ? [c] : String(spec).split(',').filter(Boolean);
+  const ids = names.flatMap((n) => {
+    if (!caseDir(n)) throw new Error(`unknown case: ${n}`);
+    return has(n, 'exclude-rules.json') ? JSON.parse(read(n, 'exclude-rules.json')) : [];
+  });
+  return [...new Set(ids)];
+}
+
 // Sum tokens across models: input includes cache read + creation.
 function sumTokens(modelUsage, usage) {
   const t = { input: 0, output: 0 };
@@ -297,5 +309,5 @@ function main(argv) {
   console.error(`wrote ${out}`);
 }
 
-module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf };
+module.exports = { sumTokens, table, parseArgs, ARMS, listCases, roundEntry, patchOf, excludedIds };
 if (require.main === module) main(process.argv.slice(2));
