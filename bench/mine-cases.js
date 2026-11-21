@@ -383,6 +383,25 @@ function sample(cands, { seed = 10, quotas = DEFAULT_QUOTAS, skip = [], avoid = 
   return picked;
 }
 
+// Rebuilds a state the history does not hold as one commit: a scratch clone at base with the given commits
+// cherry-picked in order. Returns the patch from base (binary-safe), or the pick that did not apply.
+// The source repo is only cloned from.
+function rebuild(repo, base, picks) {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'heldout-rebuild-'));
+  const work = path.join(parent, 'work');
+  try {
+    const run = (...args) => spawnSync('git', args, { encoding: 'utf8', maxBuffer: 1 << 26 });
+    if (run('clone', '--quiet', repo, work).status !== 0) return { error: 'clone failed' };
+    const g = (...args) => run('-C', work, '-c', 'user.name=heldout', '-c', 'user.email=heldout@example.com', ...args);
+    if (g('checkout', '--quiet', base).status !== 0) return { error: `no base ${base}` };
+    for (const sha of picks) {
+      if (g('cherry-pick', '--allow-empty', sha).status !== 0) return { error: `${sha} does not apply` };
+    }
+    const patch = g('diff', '--binary', base, 'HEAD').stdout;
+    return { patch, ...diffStat(work, base, 'HEAD') };
+  } finally { fs.rmSync(parent, { recursive: true, force: true }); }
+}
+
 const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // Step 4: the mechanical files of a case. accept.sh and solve-notes.md are written by hand afterwards.
@@ -524,5 +543,5 @@ function main(argv) {
   } else throw new Error(`unknown command: ${cmd}`);
 }
 
-module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
+module.exports = { chain, isOps, relayed, queuedHuman, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, labelOf, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, rebuild, writeCase, verifyCase, manifest, checkManifest, context, select, DEFAULT_QUOTAS };
 if (require.main === module) main(process.argv.slice(2));

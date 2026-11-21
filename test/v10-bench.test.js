@@ -355,6 +355,22 @@ test('sample: fewer survivors than the target ships fewer, and neighbours in one
   assert.ok(got.includes('c'));
 });
 
+test('rebuild: commits picked onto base in a scratch clone give a patch; a pick that does not apply is named', () => {
+  const fx = fixture();
+  try {
+    const head = spawnSync('git', ['-C', fx.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout;
+    const r = mc.rebuild(fx.repo, fx.sha.base, [fx.sha.wrong, fx.sha.fix]);
+    assert.strictEqual(r.error, undefined);
+    assert.match(r.patch, /^-old$/m);
+    assert.match(r.patch, /^\+right$/m);
+    assert.deepStrictEqual([r.lines, r.files], [2, ['fee.txt']]);
+    assert.strictEqual(mc.rebuild(fx.repo, fx.sha.base, [fx.sha.fix]).error, `${fx.sha.fix} does not apply`);
+    // nothing written to the source repo
+    assert.strictEqual(spawnSync('git', ['-C', fx.repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout, head);
+    assert.strictEqual(spawnSync('git', ['-C', fx.repo, 'status', '--porcelain'], { encoding: 'utf8' }).stdout, '');
+  } finally { fs.rmSync(fx.dir, { recursive: true, force: true }); }
+});
+
 // A case dir over the fixture repo; accept passes when fee.txt holds one of `passing`.
 function caseDir(fx, passing) {
   const dir = path.join(fx.dir, `case-${passing.join('-')}`);
