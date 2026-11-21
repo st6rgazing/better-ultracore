@@ -8,6 +8,7 @@ const path = require('node:path');
 const store = require('../lib/rules/store');
 const handsoff = require('../lib/handsoff');
 const mine = require('../lib/rules/mine');
+const { retrieve, matches } = require('../lib/rules/retrieve');
 
 const fresh = () => { process.env.BUC_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'buc-v10-')); return process.env.BUC_HOME; };
 const withEnv = (vars, fn) => {
@@ -385,4 +386,14 @@ test('feedback.onPrompt records hands-off evidence and queues corrections with h
   withEnv({ BUC_NOW: '2026-07-01T00:00:00.000Z' }, () => feedback.onPrompt({ prompt: 'no, that is not what I meant', sessionId: 's1', repo: 'r1' }));
   const [entry] = store.readInbox();
   assert.deepStrictEqual([entry.h, entry.ts, entry.repo], [store.hash('no, that is not what I meant'), '2026-07-01T00:00:00.000Z', 'r1']);
+});
+
+test('retrieve honours scope.repos', () => {
+  const scoped = store.normalize({ ...RULE, pinned: true, when: { keywords: ['only'], promptKinds: ['edit'] }, scope: { repos: ['r1'] } }).rule;
+  const ids = (repo) => retrieve({ prompt: 'add a chat panel', rules: [scoped], repo }).matched.map((r) => r.id);
+  assert.deepStrictEqual([ids('r1'), ids('r2'), ids(undefined)], [['only-named'], [], []]);
+  const { scope: _s, ...global } = scoped;
+  assert.deepStrictEqual(retrieve({ prompt: 'add a chat panel', rules: [global], repo: 'r2' }).matched.length, 1);
+  assert.strictEqual(matches(scoped, 'only this', 'edit', new Set(['only']), 'r2'), false);
+  assert.strictEqual(matches(scoped, 'only this', 'edit', new Set(['only']), 'r1'), true);
 });
