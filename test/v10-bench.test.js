@@ -197,3 +197,22 @@ test('standalone, kindOf, isUi', () => {
   assert.ok(!mc.isUi(['server/rooms.ts']));
 });
 
+const RULES = [{ id: 'icons-not-emoji', when: { keywords: ['icon', 'emoji', 'button'] } }, { id: 'small-commits', when: { keywords: ['commit'] } }];
+const cand = (over = {}) => ({ id: 'aaaaaaaa-001', session: 's1', idx: 1, repo: '/r/one', p: { text: 'change the header colour to dark green please', image: false }, c: { idx: 2, text: 'no the footer too', image: false, cue: true, visible: true }, ack: false, work: 1, base: 'b', wrong: 'w', fix: 'f', done: 'w', fix_lines: 10, fix_files: ['a.ts'], done_lines: 5, done_files: ['a.ts'], ...over });
+
+test('jaccard and keywordHits', () => {
+  assert.strictEqual(mc.jaccard('still not working', 'still not working!!'), 1);
+  assert.strictEqual(mc.jaccard('alpha beta', 'gamma delta'), 0);
+  assert.deepStrictEqual(mc.keywordHits('no emoji, use icons on the buttons', RULES), { rule: 'icons-not-emoji', hits: 3 });
+  assert.strictEqual(mc.keywordHits('nothing here', RULES).hits, 0);
+});
+
+test('leaks: conservative on rule keywords and near-duplicates of mined corrections', () => {
+  assert.strictEqual(mc.leaks(cand(), RULES, []), null);
+  assert.match(mc.leaks(cand({ c: { idx: 2, text: 'no emoji use an icon', cue: true, visible: true } }), RULES, []), /leak: miner-visible/);
+  // not visible to the miner, but request and correction together name the rule
+  assert.match(mc.leaks(cand({ p: { text: 'add a button with an icon' }, c: { idx: 2, text: 'i meant something without any emoji in it at all', cue: false, visible: false } }), RULES, []), /request and correction/);
+  const visible = [{ session: 's9', idx: 4, text: 'dont commit that yet' }];
+  assert.match(mc.leaks(cand({ c: { idx: 2, text: 'dont commit that yet!', cue: true, visible: true } }), RULES, visible), /near-duplicate/);
+});
+

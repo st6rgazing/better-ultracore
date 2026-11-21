@@ -209,4 +209,19 @@ function keywordHits(text, rules) {
   return best;
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits };
+// Leakage, conservative: a correction the miner could see that carries 2 or more keywords of one rule may have
+// sourced that rule; so may any correction that nearly repeats a miner-visible one with a keyword hit.
+function leaks(cand, rules, visible) {
+  const text = cand.c.text;
+  const k = keywordHits(text, rules);
+  if (cand.c.visible && k.hits >= 2) return `leak: miner-visible, ${k.hits} keywords of ${k.rule}`;
+  const both = keywordHits(`${cand.p.text} ${text}`, rules);
+  if (both.hits >= 3) return `leak: request and correction carry ${both.hits} keywords of ${both.rule}`;
+  for (const v of visible) {
+    if (v.session === cand.session && v.idx === cand.c.idx) continue;
+    if (keywordHits(v.text, rules).hits >= 1 && jaccard(text, v.text) >= 0.6) return 'leak: near-duplicate of a mined correction';
+  }
+  return null;
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks };
