@@ -9,7 +9,7 @@ const { redact } = require('../lib/prefs/redact');
 const store = require('../lib/rules/store');
 const feedback = require('../lib/rules/feedback');
 const habits = require('../lib/rules/habits');
-const { intentLine, correctionLine } = require('../lib/intent');
+const { intentLine, correctionLine, SELF, SELF_SHORT } = require('../lib/intent');
 const fs = require('node:fs');
 const { probeLine } = require('../lib/probe');
 
@@ -44,10 +44,12 @@ function hadPreviousTurn(sessionId, transcriptPath) {
   } catch { return false; }
 }
 
-// Fixed lines get at most MAX_FIXED chars so rules keep room; drop in the given order (verify, probe, intent).
+// Fixed lines get at most MAX_FIXED chars so rules keep room. The self-classification line first gives way to its
+// short form; after that lines drop in the given order (verify, probe, intent).
 const MAX_FIXED = 500;
 function capFixed(fixed, dropOrder) {
   const size = () => fixed.filter(Boolean).join('\n').length;
+  if (size() > MAX_FIXED && fixed.includes(SELF)) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
   for (const line of dropOrder) {
     if (size() <= MAX_FIXED) return;
     const i = line ? fixed.indexOf(line) : -1;
@@ -85,7 +87,9 @@ function run(input) {
   if (tc) fixed.push(`Verify with ${tc} (not npx); report what you ran.`);
   const intent = correctionLine(prompt, hadPrev) || intentLine(prompt, { kind });
   fixed.push(intent, probeLine(prompt));
-  capFixed(fixed, [tc && fixed.find((l) => l.startsWith('Verify with')), fixed[fixed.length - 1], intent]);
+  capFixed(fixed, [tc && fixed.find((l) => l.startsWith('Verify with')), fixed[fixed.length - 1], intent, SELF_SHORT]);
+  // A learned rule is worth more than the long form of the self-classification line.
+  if (fixed.includes(SELF) && fit(all, fixed.filter(Boolean)).kept.length < all.length) fixed[fixed.indexOf(SELF)] = SELF_SHORT;
   const { kept: matched, block } = fit(all, fixed.filter(Boolean));
   if (sessionId) store.saveLastTurn(sessionId, { rules: matched.map((r) => r.id), repo, ts: Date.now() });
   if (sessionId && !root) store.clearTurn(sessionId);

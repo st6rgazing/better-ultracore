@@ -203,7 +203,7 @@ test('inject stays within 800 chars with five long rules and every line', () => 
   const out = hook('inject.js', { prompt: 'change password hashing in auth.js to scrypt', cwd: dir, session_id: 'l1' }, home);
   const ctx = out.hookSpecificOutput.additionalContext;
   assert.ok(ctx.length <= 800, String(ctx.length));
-  assert.match(ctx, /Read the request literally/);
+  assert.match(ctx, /Name your reading in your first line/);
   assert.match(ctx, /throwaway script/);
   assert.match(ctx, /Long rule 1 /);
   assert.doesNotMatch(ctx, /Long rule 5 /);
@@ -252,7 +252,7 @@ test('fixed lines stay within 500 chars and keep intent and effect probe for a s
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { typecheck: 'tsc' } }));
   const ctx = hook('inject.js', { prompt: 'add a sound when the intro animation plays', cwd: dir, session_id: 'f1' }, tmp('buc-home-')).hookSpecificOutput.additionalContext;
   assert.ok(ctx.length <= 500, String(ctx.length));
-  assert.match(ctx, /where the user will see it/);
+  assert.match(ctx, /Name your reading in your first line/);
   assert.match(ctx, /runtime effect/);
 });
 
