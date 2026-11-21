@@ -56,3 +56,47 @@ test('needsModel flags a default-model launch and leaves typed agents, forks and
   assert.strictEqual(budget.needsModel({ tool_name: 'Workflow', tool_input: { script: 'await agent({prompt, model: "haiku"})' } }), false);
   assert.strictEqual(budget.needsModel({ tool_name: 'Workflow', tool_input: { name: 'buc-flow' } }), false);
 });
+
+const many = (n, input = (i) => ({ prompt: `part ${i}`, model: 'haiku' })) => Array.from({ length: n }, (_, i) => agent(input(i)));
+function withOff(off, fn) {
+  const old = process.env.BUC_OFF;
+  process.env.BUC_OFF = off;
+  try { return fn(); } finally { if (old === undefined) delete process.env.BUC_OFF; else process.env.BUC_OFF = old; }
+}
+
+test('inspect counts launches, warns once above the cap and stops at the ceiling', () => withOff('', () => {
+  const dir = tmp();
+  assert.deepStrictEqual(budget.inspect({}, [{ tool_name: 'Read', tool_input: {} }], dir), { patch: {}, notes: [], stop: '' });
+  const first = budget.inspect({ intent: 'SELF' }, many(6), dir);
+  assert.deepStrictEqual([first.patch.agents, first.notes, first.stop], [6, [], '']);
+  const over = budget.inspect({ intent: 'SELF', agents: 6 }, many(1), dir);
+  assert.match(over.notes[0], /^Agents: 7 launched on one request/);
+  assert.deepStrictEqual(budget.inspect({ intent: 'SELF', agents: 7 }, many(1), dir).notes, [], 'only once');
+  assert.match(budget.inspect({ intent: 'EXACT', agents: 2 }, many(1), dir).notes[0], /3 launched on a small request/);
+  const stop = budget.inspect({ intent: 'SELF', agents: 14 }, many(3), dir);
+  assert.match(stop.stop, /17 agents launched this turn, the ceiling is 16/);
+  assert.strictEqual(stop.patch.agents, 17);
+  assert.strictEqual(budget.inspect({ agents: 17 }, many(1), dir).stop, '', 'the ceiling stops once');
+  assert.strictEqual(budget.inspect({ agents: 15 }, many(5), conf(false)).stop, '');
+}));
+
+test('inspect stops on a limit error and on a third identical brief, and notes a missing model once', () => withOff('', () => {
+  const dir = tmp();
+  assert.match(budget.inspect({}, [agent({ prompt: 'a', model: 'haiku' }, 'You have hit your limit.')], dir).stop, /usage or account limit/);
+  const same = () => agent({ prompt: 'look at the parser', model: 'haiku' });
+  const two = budget.inspect({}, [same(), same()], dir);
+  assert.strictEqual(two.stop, '');
+  assert.match(budget.inspect({ ...two.patch }, [same()], dir).stop, /same agent brief was dispatched 3 times/);
+  const noted = budget.inspect({}, [agent({ prompt: 'a' })], dir);
+  assert.match(noted.notes[0], /without a model/);
+  assert.strictEqual(noted.patch.modelNoted, true);
+  assert.deepStrictEqual(budget.inspect({ ...noted.patch }, [agent({ prompt: 'b' })], dir).notes, []);
+}));
+
+test('inspect honours each BUC_OFF name', () => {
+  const dir = tmp();
+  withOff('agents,agent-limit,agent-repeat,agent-model', () => {
+    const r = budget.inspect({ agents: 15 }, [agent({ prompt: 'a' }, 'You have hit your limit.'), agent({ prompt: 'a' }), agent({ prompt: 'a' })], dir);
+    assert.deepStrictEqual([r.notes, r.stop, r.patch.agents], [[], '', 18]);
+  });
+});
