@@ -41,3 +41,19 @@ test('due needs three candidates of one pattern in one repo from two sessions', 
   assert.deepStrictEqual(reflect.due([cand('still', 'a'), cand('misread', 'b'), cand('overshoot', 'c')], 'r1'), []);
   assert.deepStrictEqual(reflect.due([cand('nope', 'a'), cand('nope', 'b'), cand('nope', 'c')], 'r1'), []);
 });
+
+const seed = (list) => fs.writeFileSync(reflect.file(), list.map((c) => `${JSON.stringify(c)}\n`).join(''));
+
+test('promote stores a repo-scoped rule with hash-only sources and uses up its candidates', () => withHome(() => {
+  assert.deepStrictEqual(reflect.promote('r1'), []);
+  seed([cand('overshoot', 'a'), cand('overshoot', 'a'), cand('overshoot', 'b'), cand('still', 'a'), cand('overshoot', 'z', 'r2')]);
+  assert.deepStrictEqual(reflect.promote('r1'), ['reflect-overshoot']);
+  const [rule] = store.loadRules();
+  assert.deepStrictEqual([rule.id, rule.origin, rule.count, rule.scope, rule.pinned], ['reflect-overshoot', 'learn', 3, { repos: ['r1'] }, false]);
+  assert.deepStrictEqual(Object.keys(rule.sources[0]).sort(), ['h', 'repo', 'session', 'ts']);
+  assert.deepStrictEqual(reflect.read().map((c) => [c.k, c.repo]), [['still', 'r1'], ['overshoot', 'r2']]);
+  assert.deepStrictEqual(reflect.promote('r1'), [], 'nothing left to promote');
+  seed([cand('overshoot', 'a', 'r2'), cand('overshoot', 'b', 'r2'), cand('overshoot', 'c', 'r2')]);
+  assert.deepStrictEqual(reflect.promote('r2'), ['reflect-overshoot']);
+  assert.deepStrictEqual(store.loadRules()[0].scope, { repos: ['r1', 'r2'] });
+}));
