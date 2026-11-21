@@ -513,4 +513,38 @@ test('byDay splits a session that spans days into one unit per day', () => {
   } finally { for (const d of [root, work]) fs.rmSync(d, { recursive: true, force: true }); }
 });
 
+// Two sessions with a degree request, a still-broken follow-up, a sweep, an advice question, a go-ahead and a long prompt.
+function evalFixture(root) {
+  transcript(root, '-Users-x-app', 'e1', '2026-06-01', [
+    ['u', 0, 'make the card slightly smaller'], ['a', 1, '/app/card.css'],
+    ['u', 5, 'still not working'], ['a', 6, '/app/card.css'],
+    ['u', 10, 'ok push'],
+    ['u', 15, 'remove every mention of the beta everywhere'], ['a', 16, '/app/a.ts'], ['a', 17, '/app/b.tsx'],
+    ['u', 20, 'nope'],
+  ]);
+  transcript(root, '-Users-x-app', 'e2', '2026-06-02', [
+    ['u', 0, 'explain how the login flow works, do not change anything'],
+    ['u', 5, 'add a settings page with a theme toggle'], ['a', 6, '/app/settings.tsx'],
+    ['u', 10, `please ${'really '.repeat(70)}do it`],
+  ]);
+  return require('../bench/transcripts').allSessions(root);
+}
+
+test('intent eval candidates: requests, follow-ups and what happened next', () => {
+  const { candidates } = require('../bench/intent-eval');
+  const root = tmp('eval');
+  try {
+    const rows = candidates(evalFixture(root));
+    assert.deepStrictEqual(rows.map((r) => [r.id, r.followup, r.regex]), [
+      ['e1:0', false, 'degree'], ['e1:1', true, 'still'], ['e1:3', false, 'sweep'], ['e1:4', true, 'misread'],
+      ['e2:0', false, 'show'], ['e2:1', false, 'self'],
+    ]);
+    assert.deepStrictEqual(rows[0].evidence, { files: 1, ui_files: 1, next: 'still' });
+    assert.deepStrictEqual(rows[2].evidence, { files: 2, ui_files: 1, next: 'misread' });
+    assert.strictEqual(rows[1].prev, 'make the card slightly smaller');
+    assert.strictEqual(rows[0].unit, 'e1@2026-06-01');
+    assert.strictEqual(rows[5].evidence.next, 'none');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 // more tests below
