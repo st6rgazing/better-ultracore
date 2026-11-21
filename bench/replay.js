@@ -234,7 +234,8 @@ function main(argv) {
   const sessions = f['projects-root'] ? allSessions(f['projects-root']) : allSessions();
   const opts = { cacheDir, label: 'replay', cap: parseFloat(f.cap), model: f.model };
   // Each replay starts from an empty store in a fresh folder; earlier ones are left in place under the cache dir.
-  const homes = fs.mkdtempSync(path.join(fs.mkdirSync(cacheDir, { recursive: true }) || cacheDir, 'replay-home-'));
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const homes = fs.mkdtempSync(path.join(cacheDir, 'replay-home-'));
   const go = (name, o) => replay(sessions, { home: path.join(homes, name), every: parseInt(f.every, 10), log: (m) => console.error(`[${name}] ${m}`), ...o });
   const learned = go('learn', { cluster: modelCluster(opts) });
   const flat = go('no-byrepo', { cluster: modelCluster(opts), byRepo: false });
