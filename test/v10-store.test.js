@@ -397,3 +397,10 @@ test('retrieve honours scope.repos', () => {
   assert.strictEqual(matches(scoped, 'only this', 'edit', new Set(['only']), 'r2'), false);
   assert.strictEqual(matches(scoped, 'only this', 'edit', new Set(['only']), 'r1'), true);
 });
+
+test('updateRules edits the listed stored rules in place', () => {
+  fresh();
+  store.importRules([RULE, { ...RULE, id: 'other-rule' }]);
+  store.updateRules(['only-named'], (r) => { r.scope = { repos: ['r1'] }; });
+  assert.deepStrictEqual(store.loadRules().map((r) => r.scope), [{ repos: ['r1'] }, undefined]);
+});
