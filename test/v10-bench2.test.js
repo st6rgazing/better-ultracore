@@ -572,4 +572,54 @@ test('intent eval sample keeps pattern fires first and split never divides a uni
   assert.ok(Math.abs(dev - (rows.length - dev)) <= 8, `dev ${dev} of ${rows.length}`);
 });
 
+// The JSON array a model prompt ends with.
+const itemsIn = (prompt) => JSON.parse(prompt.slice(prompt.lastIndexOf('\n\n') + 2));
+
+test('intent eval label: valid labels per kind, blind to the pattern, stops at the budget', () => {
+  const { label } = require('../bench/intent-eval');
+  const rows = [
+    { id: 'a', prompt: 'make the card slightly smaller', followup: false, regex: 'degree', evidence: { files: 1, ui_files: 1, next: 'none' } },
+    { id: 'b', prompt: 'still broken', followup: true, prev: 'make the card slightly smaller', regex: 'still', evidence: { files: 0, ui_files: 0, next: 'end' } },
+    { id: 'c', prompt: 'add a page', followup: false, regex: 'self', evidence: { files: 2, ui_files: 0, next: 'none' } },
+    { id: 'd', prompt: 'later row', followup: false, regex: 'self', evidence: { files: 0, ui_files: 0, next: 'none' } },
+  ];
+  const prompts = [];
+  const askFn = (prompt) => {
+    prompts.push(prompt);
+    if (prompts.length === 3) throw Object.assign(new Error('cap'), { code: 'BUDGET' });
+    // a follow-up label on a request is not valid and is dropped
+    return { text: JSON.stringify(itemsIn(prompt).map((x) => ({ i: x.i, gold: x.kind === 'followup' ? 'still' : x.text.includes('page') ? 'still' : 'exact' }))) };
+  };
+  const got = label(rows, { model: 'sonnet' }, { askFn, size: 1 });
+  assert.deepStrictEqual(got.map((r) => r.gold), ['exact', 'still', null, null]);
+  assert.strictEqual(got[0].labelled_by, 'sonnet');
+  assert.deepStrictEqual(Object.keys(itemsIn(prompts[0])[0]), ['i', 'kind', 'text', 'after']);
+  assert.deepStrictEqual(itemsIn(prompts[1])[0], { i: 1, kind: 'followup', text: 'still broken', previous_request: 'make the card slightly smaller', after: { files_edited: 0, ui_files: 0, user_then: 'end' } });
+});
+
+test('intent eval gate: precision per pattern against the 0.9 on 8 fires rule', () => {
+  const { gate, table } = require('../bench/intent-eval');
+  const many = (n, prompt, gold, extra = {}) => Array.from({ length: n }, (_, i) => ({ id: `${gold}-${prompt.length}-${i}`, prompt: prompt.replace('N', String(i + 2)), gold, ...extra }));
+  const rows = [
+    ...many(9, 'make card N slightly smaller', 'exact'), ...many(1, 'make it slightly better somehow', 'feature'),
+    ...many(8, 'remove beta N everywhere', 'sweep'), ...many(2, 'check everywhere for N', 'show'),
+    ...many(3, 'still not working N', 'still', { followup: true }),
+    ...many(4, 'add a settings page number N', 'feature'),
+    { id: 'unlabelled', prompt: 'make it slightly bigger', gold: null },
+  ];
+  const got = Object.fromEntries(gate(rows).map((r) => [r.pattern, r]));
+  assert.deepStrictEqual([got.degree.fires, got.degree.correct, got.degree.pass], [10, 9, true]);
+  assert.deepStrictEqual([got.sweep.fires, got.sweep.correct, got.sweep.pass], [10, 8, false]);
+  assert.deepStrictEqual([got.still.fires, got.still.precision, got.still.pass], [3, 1, false]);
+  assert.deepStrictEqual([got.show.fires, got.show.pass], [0, false]);
+  assert.deepStrictEqual([got.self.fires, got.self.gated, got.self.pass], [4, false, null]);
+  const text = table(gate(rows));
+  assert.match(text, /\| degree \| 10 \| 9 \| 0\.90 \| PASS \|/);
+  assert.match(text, /\| sweep \| 10 \| 8 \| 0\.80 \| FAIL \|/);
+  assert.match(text, /\| still \| 3 \| 3 \| 1\.00 \| FAIL \(3 fires\) \|/);
+  assert.match(text, /\| self \| 4 \| - \| - \| not gated \|/);
+  assert.match(text, /sweep: show-22-0, show-22-1/);
+  assert.ok(gate(rows, { mode: 'regex' }).every((r) => r.pass === null));
+});
+
 // more tests below

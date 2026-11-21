@@ -91,4 +91,74 @@ function split(rows, seed = 10) {
   return rows.map((r) => ({ ...r, split: side.get(r.unit) }));
 }
 
-module.exports = { candidates, fired, sample, split, REQUEST_LABELS, FOLLOWUP_LABELS };
+const LABEL = `You label turns a user typed to a coding assistant, to build an evaluation set. Each item has "kind" (request or followup), "text", for a followup the "previous_request", and "after": the number of files the assistant then edited, how many were UI files, and "user_then", how the user's next turn reacted (still, misread, undo-show or overshoot: a correction of that kind; cue: some corrective wording; none: no correction; end: last turn). Use "after" as a hint about what the user wanted, never as the label itself.
+
+Label a request with what the user wanted:
+- exact: a named thing takes a stated value or state, or a named thing is nudged by a small degree; the right response is a minimal, literal edit.
+- feature: build, add or change behaviour that has to be wired into the app.
+- sweep: the same change at every occurrence across the project.
+- vague: names a screen or area to fix or improve without saying what is wrong.
+- show: wants an explanation, advice, review or steps; no file edits wanted.
+- other: none of these (deploy, commit or push, a status question, small talk, pasted output with no ask, "continue").
+
+Label a followup with how it reacts to the assistant's last change:
+- still: the problem is still there, the change did not work.
+- misread: the assistant did the wrong thing or misunderstood; a different reading is wanted.
+- undo-show: undo the change and show or tell instead.
+- overshoot: the right direction, but too much or too far.
+- new-request: not a correction: a next request, an approval or a question.
+
+Return a JSON array with one {"i": number, "gold": "label"} per item.`;
+
+const clip = (text, n) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, n);
+
+// Pre-labels rows with a model through bench/ask.js (cached and capped; opts go to ask()). The model never sees
+// which pattern fired. Returns the rows with `gold` (null when it gave no valid label, or the budget ran out) and
+// `labelled_by`.
+function label(rows, opts, { askFn = require('./ask').ask, size = 30 } = {}) {
+  const { jsonIn } = require('./ask');
+  const out = rows.map((r) => ({ ...r, gold: null }));
+  for (let at = 0; at < rows.length; at += size) {
+    const items = rows.slice(at, at + size).map((r, k) => ({
+      i: at + k, kind: r.followup ? 'followup' : 'request', text: clip(r.prompt, 600), ...(r.followup && { previous_request: clip(r.prev, 300) }),
+      after: { files_edited: r.evidence.files, ui_files: r.evidence.ui_files, user_then: r.evidence.next },
+    }));
+    let got = null;
+    try { got = jsonIn(askFn(`${LABEL}\n\n${JSON.stringify(items)}`, opts).text); } catch (e) { if (e.code === 'BUDGET') break; }
+    for (const g of Array.isArray(got) ? got : []) {
+      const row = g && Number.isInteger(g.i) && g.i >= at && g.i < at + items.length ? out[g.i] : null;
+      if (row && (row.followup ? FOLLOWUP_LABELS : REQUEST_LABELS).includes(g.gold)) Object.assign(row, { gold: g.gold, labelled_by: opts.model || 'model' });
+    }
+  }
+  return out;
+}
+
+const GATE = { precision: 0.9, fires: 8 };
+
+// Per-pattern precision of the labelled rows via intent.scorePatterns, with the gate from lib/intent.js: a pattern
+// keeps its fixed line only with precision at least 0.9 on at least 8 fires. Returns [{pattern, fires, correct,
+// precision, gated, pass, wrong}]; `self` and regex-mode patterns have no gold and are not gated.
+function gate(rows, { mode = 'self' } = {}) {
+  const scored = intent.scorePatterns(rows.filter((r) => r.gold), { mode });
+  const gated = new Set([...intent.PRECISE.map((p) => p.id), 'still', 'overshoot', 'undo-show', 'misread']);
+  const order = [...gated, ...Object.keys(scored).filter((k) => !gated.has(k))];
+  return order.map((pattern) => {
+    const s = scored[pattern] || { fires: 0, correct: 0, precision: null, wrong: [] };
+    const judged = mode !== 'regex' && gated.has(pattern);
+    return { pattern, fires: s.fires, correct: s.correct, precision: s.precision, gated: judged, pass: judged ? s.fires >= GATE.fires && s.precision >= GATE.precision : null, wrong: s.wrong };
+  }).filter((x) => x.gated || x.fires);
+}
+
+// The gate results as a table, with the ids of the rows each pattern got wrong: those are the ones to review by hand.
+function table(results) {
+  const out = ['| pattern | fires | correct | precision | gate (0.9 on 8 fires) |', '|---|---|---|---|---|'];
+  for (const r of results) {
+    const verdict = !r.gated ? 'not gated' : r.pass ? 'PASS' : r.fires < GATE.fires ? `FAIL (${r.fires} fires)` : 'FAIL';
+    out.push(`| ${r.pattern} | ${r.fires} | ${r.gated ? r.correct : '-'} | ${r.precision === null ? '-' : r.precision.toFixed(2)} | ${verdict} |`);
+  }
+  const wrong = results.filter((r) => r.gated && r.wrong.length).map((r) => `${r.pattern}: ${r.wrong.join(', ')}`);
+  if (wrong.length) out.push('', 'Rows to review (the pattern fired, the label disagrees):', ...wrong);
+  return out.join('\n');
+}
+
+module.exports = { candidates, fired, sample, split, label, gate, table, GATE, REQUEST_LABELS, FOLLOWUP_LABELS };
