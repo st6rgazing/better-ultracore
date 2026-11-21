@@ -390,4 +390,19 @@ function verifyCase(dir) {
   return out;
 }
 
-module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, DEFAULT_QUOTAS };
+// Step 8: sha256 of every file of every case. Holds ids and hashes only, never task text.
+function manifest(root) {
+  const cases = {};
+  for (const c of fs.readdirSync(root).sort()) {
+    const dir = path.join(root, c);
+    if (!fs.existsSync(path.join(dir, 'setup.sh'))) continue;
+    cases[c] = {};
+    for (const f of fs.readdirSync(dir).sort()) {
+      const p = path.join(dir, f);
+      if (fs.statSync(p).isFile()) cases[c][f] = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+    }
+  }
+  return { version: 1, algorithm: 'sha256', cases };
+}
+
+module.exports = { chain, isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon, rejectCorrection, rejectControl, shuffle, sample, writeCase, verifyCase, manifest, DEFAULT_QUOTAS };
