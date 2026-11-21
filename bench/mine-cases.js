@@ -241,4 +241,17 @@ function usedTurns(cands, caseRoot) {
   return used;
 }
 
-module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns };
+// Step 2, mechanical criteria shared by correction cases and controls. Returns the reject reason or null.
+function rejectCommon(c, ctx) {
+  if (!c.repo) return 'no repo for cwd';
+  if ((ctx.skipRepos || []).some((r) => c.repo === r || c.repo.startsWith(`${r}/`))) return 'excluded repo';
+  if (!ctx.allowTemp && TEMP_DIR.test(c.repo.replace(/[^a-zA-Z0-9]/g, '-'))) return 'temp or bench dir';
+  if (c.p.image) return 'P has an image';
+  if (words(c.p.text) > 80) return 'P over 80 words';
+  if (!standalone(c.p.text)) return 'P not standalone';
+  if ((ctx.used || []).some((u) => u.session === c.session && u.idx >= c.idx - 3 && u.idx <= c.c.idx + 3)) return 'within 3 turns of an existing case';
+  if (!c.base) return 'no base commit';
+  return null;
+}
+
+module.exports = { isOps, relayed, parseSession, transcripts, repoOf, resolveShas, diffStat, isCue, minerVisible, triples, mine, words, standalone, kindOf, isUi, jaccard, keywordHits, leaks, usedTurns, rejectCommon };
