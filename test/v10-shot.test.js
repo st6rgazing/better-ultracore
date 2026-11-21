@@ -50,4 +50,26 @@ test('playwrightServer reads the repo fixture config, a port-only config, and gi
   assert.strictEqual(shot.playwrightServer(tmp('buc-shot-')), null);
 });
 
+// Runs fn with env set, restoring the old values after (also when fn is async).
+async function withEnv(env, fn) {
+  const old = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try { return await fn(); } finally {
+    for (const [k, v] of Object.entries(old)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+test('findEngine: none when forced off, a named Chrome binary, a Playwright module by path', async () => {
+  const dir = tmp('buc-shot-');
+  write(dir, 'chrome', '');
+  write(dir, 'pw/index.js', 'module.exports = { chromium: { launch() {} } };\n');
+  write(dir, 'notpw/index.js', 'module.exports = {};\n');
+  await withEnv({ BUC_SHOT_ENGINE: 'none', BUC_CHROME: path.join(dir, 'chrome'), BUC_PLAYWRIGHT: '' }, () => assert.strictEqual(shot.findEngine(dir), null));
+  await withEnv({ BUC_SHOT_ENGINE: 'chrome', BUC_CHROME: path.join(dir, 'chrome'), BUC_PLAYWRIGHT: path.join(dir, 'pw') }, () => {
+    assert.deepStrictEqual(shot.findEngine(dir), { kind: 'chrome', bin: path.join(dir, 'chrome') });
+  });
+  await withEnv({ BUC_SHOT_ENGINE: 'playwright', BUC_PLAYWRIGHT: path.join(dir, 'pw') }, () => assert.strictEqual(shot.findEngine(dir).kind, 'playwright'));
+  await withEnv({ BUC_SHOT_ENGINE: 'playwright', BUC_PLAYWRIGHT: path.join(dir, 'notpw') }, () => assert.strictEqual(shot.findEngine(dir), null));
+});
+
 // end
